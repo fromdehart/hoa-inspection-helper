@@ -1,0 +1,29 @@
+[Unit]
+Description=One Shot Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mike
+WorkingDirectory=/home/mike/one-shot
+ExecStart=/bin/bash /home/mike/one-shot/telegram-bot.sh
+Restart=always
+RestartSec=10
+
+# Environment variables — loaded from /home/mike/.env.one-shot
+EnvironmentFile=/home/mike/.env.one-shot
+
+# Include user's npm global bin and local bin in PATH
+Environment=PATH=/home/mike/.npm-global/bin:/home/mike/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# Logging
+StandardOutput=append:/var/log/one-shot-bot.log
+StandardError=append:/var/log/one-shot-bot.log
+
+# Reasonable limits
+TimeoutStopSec=30
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

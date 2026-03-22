@@ -1,0 +1,24 @@
+{
+  "schema": "./convex/schema.ts",
+  "functions": "./convex",
+  "auth": {
+    "providers": []
+  },
+  "node": {
+    "18": true
+  },
+  "env": {
+    "RESEND_API_KEY": {
+      "description": "Resend API key for sending emails"
+    },
+    "EMAIL_FROM": {
+      "description": "Email address to send from"
+    },
+    "APP_BASE_URL": {
+      "description": "Base URL for the application (e.g., https://your-challenge.vercel.app)"
+    },
+    "OPENAI_API_KEY": {
+      "description": "OpenAI API key for AI functionality"
+    }
+  }
+}

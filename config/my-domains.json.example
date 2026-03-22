@@ -1,0 +1,6 @@
+{
+  "vercelDomain": "your-project.vercel.app",
+  "emailDomain": "yourdomain.com",
+  "fromEmail": "noreply@yourdomain.com"
+}
+

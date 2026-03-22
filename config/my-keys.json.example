@@ -1,0 +1,9 @@
+{
+  "clerkPublishableKey": "pk_test_your_clerk_publishable_key_here",
+  "clerkSecretKey": "sk_test_your_clerk_secret_key_here",
+  "convexDeployment": "dev:your-project-name",
+  "convexUrl": "https://your-project.convex.cloud",
+  "resendApiKey": "re_your_resend_api_key_here",
+  "openaiApiKey": "sk-your_openai_api_key_here",
+  "clarityId": "your_clarity_id_here"
+}
