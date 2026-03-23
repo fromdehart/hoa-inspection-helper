@@ -242,3 +242,24 @@ Inspection:
  4. Taps Next
  5. Continues through entire street
 
+
+## User Feedback (Sun Mar 22 01:43:44 AM EDT 2026)
+We might want to think about a different photo storage option, I’m on the free convex plan and I don’t know how many photos that’ll support. 
+
+Also, I’m not sure about Claude opus for the image model it might be too expensive for an PoC. What’s a cheaper model maybe on open AI or openrouter that can do this?
+
+## User Feedback (Sun Mar 22 01:48:19 AM EDT 2026)
+Let’s use gpt 4.1-mini for the model and let’s just store the photos on my VPS that this site is running on.
+
+## User Feedback (Sun Mar 22 02:02:17 AM EDT 2026)
+Ai inspections should happen as photos are uploaded so inspectors can see realtime feedback and add any notes for things that are missed. 
+
+Homeowner access can be email link for now, we’ll do for auth in the future. 
+
+Letter generation can just be HTML for now, ideally you can click to send the email with the letter details in it. That can also have the link to access to homeowner portal. 
+
+No maximum for photos
+
+You can figure out the photo storage path and serve details, just make it logical
+
+Full size image should be passed to AI and stored.
