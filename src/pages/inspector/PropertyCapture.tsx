@@ -40,6 +40,7 @@ export default function PropertyCapture() {
   const [lastUploadedPhotoId, setLastUploadedPhotoId] = useState<Id<"photos"> | null>(null);
   const [noteSaved, setNoteSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const albumInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (localStorage.getItem("hoa_inspector") !== "true") {
@@ -83,6 +84,7 @@ export default function PropertyCapture() {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (albumInputRef.current) albumInputRef.current.value = "";
     }
   };
 
@@ -181,23 +183,40 @@ export default function PropertyCapture() {
           className="hidden"
           onChange={handlePhotoSelected}
         />
-        <button
-          className={`btn-bounce w-full py-4 rounded-2xl font-bold text-lg shadow-sm border-2 transition-all ${
-            uploading
-              ? "bg-gray-100 border-gray-200 text-gray-400"
-              : "bg-white border-dashed border-sky-300 text-sky-600 hover:bg-sky-50"
-          }`}
-          disabled={uploading}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {uploading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin">⏳</span> Uploading...
-            </span>
-          ) : (
-            "📸 Take Photo"
-          )}
-        </button>
+        <input
+          ref={albumInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handlePhotoSelected}
+        />
+        <div className="flex gap-2">
+          <button
+            className={`btn-bounce flex-1 py-4 rounded-2xl font-bold text-lg shadow-sm border-2 transition-all ${
+              uploading
+                ? "bg-gray-100 border-gray-200 text-gray-400"
+                : "bg-white border-dashed border-sky-300 text-sky-600 hover:bg-sky-50"
+            }`}
+            disabled={uploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="animate-spin">⏳</span> Uploading...
+              </span>
+            ) : (
+              "📸 Take Photo"
+            )}
+          </button>
+          <button
+            className="btn-bounce px-5 py-4 rounded-2xl font-bold text-lg shadow-sm border-2 bg-white border-dashed border-violet-300 text-violet-600 hover:bg-violet-50 transition-all disabled:opacity-40"
+            disabled={uploading}
+            onClick={() => albumInputRef.current?.click()}
+            title="Upload from album"
+          >
+            🖼️
+          </button>
+        </div>
 
         {/* Photo strip */}
         {sectionPhotos.length > 0 && (
