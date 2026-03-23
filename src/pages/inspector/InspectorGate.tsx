@@ -1,13 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function InspectorGate() {
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [shake, setShake] = useState(false);
 
   useEffect(() => {
     if (localStorage.getItem("hoa_inspector") === "true") {
@@ -21,37 +19,50 @@ export default function InspectorGate() {
       localStorage.setItem("hoa_inspector", "true");
       navigate("/inspector/streets");
     } else {
-      setError("Incorrect password");
+      setError("Wrong password — try again!");
+      setShake(true);
+      setTimeout(() => setShake(false), 500);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Inspector Login</CardTitle>
-        </CardHeader>
-        <CardContent>
+    <div className="min-h-screen gradient-hero flex items-center justify-center px-6">
+      <div className={`w-full max-w-sm ${shake ? "animate-[shake_0.4s_ease-in-out]" : ""}`}>
+        <div className="text-center mb-8">
+          <div className="text-6xl mb-3">🚶</div>
+          <h1 className="text-3xl font-extrabold text-white">Inspector Login</h1>
+          <p className="text-sky-200 mt-1">Ready to hit the streets?</p>
+        </div>
+
+        <div className="bg-white/10 backdrop-blur-sm rounded-3xl p-6 border border-white/20 shadow-2xl">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            <Input
+            <input
               type="password"
               placeholder="Password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => { setPassword(e.target.value); setError(""); }}
               autoFocus
+              className="w-full px-4 py-3 rounded-xl bg-white/20 text-white placeholder-white/40 border border-white/30 focus:outline-none focus:border-cyan-300 focus:bg-white/25 text-base transition-all"
             />
-            {error && <p className="text-sm text-red-500">{error}</p>}
-            <Button type="submit">Enter</Button>
+            {error && (
+              <p className="text-red-300 text-sm font-medium text-center">{error}</p>
+            )}
             <button
-              type="button"
-              className="text-sm text-muted-foreground hover:underline"
-              onClick={() => navigate("/")}
+              type="submit"
+              className="btn-bounce w-full gradient-inspector py-3 rounded-xl text-white font-bold text-lg shadow-lg border border-white/20"
             >
-              Back
+              Start Inspecting →
             </button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+
+        <button
+          className="mt-6 w-full text-center text-white/50 hover:text-white/80 text-sm transition-colors"
+          onClick={() => navigate("/")}
+        >
+          ← Back to Home
+        </button>
+      </div>
     </div>
   );
 }

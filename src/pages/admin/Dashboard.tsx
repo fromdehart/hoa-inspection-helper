@@ -2,14 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 
 type StatusFilter = "all" | "notStarted" | "inProgress" | "complete";
 
-// Simple CSV parser (handles basic comma-separated values)
-// Note: does not handle commas within quoted fields — sufficient for HOA addresses
 function parseCSV(text: string): Array<{
   address: string;
   streetName: string;
@@ -41,16 +36,10 @@ function parseCSV(text: string): Array<{
   return rows;
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  notStarted: "Not Started",
-  inProgress: "In Progress",
-  complete: "Complete",
-};
-
-const STATUS_VARIANTS: Record<string, "secondary" | "outline" | "default"> = {
-  notStarted: "secondary",
-  inProgress: "outline",
-  complete: "default",
+const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; emoji: string }> = {
+  notStarted: { label: "Not Started", color: "text-gray-600", bg: "bg-gray-100", emoji: "⏳" },
+  inProgress:  { label: "In Progress", color: "text-amber-700", bg: "bg-amber-100", emoji: "🔍" },
+  complete:    { label: "Complete",    color: "text-green-700", bg: "bg-green-100", emoji: "✅" },
 };
 
 export default function Dashboard() {
@@ -91,7 +80,7 @@ export default function Dashboard() {
         return;
       }
       const result = await importFromCSV({ rows });
-      setToast(`${result.created} properties imported, ${result.skipped} skipped`);
+      setToast(`🎉 ${result.created} properties imported, ${result.skipped} skipped`);
     } catch (err) {
       setToast("Import failed: " + String(err));
     } finally {
@@ -101,123 +90,148 @@ export default function Dashboard() {
     }
   };
 
-  const tabs: StatusFilter[] = ["all", "notStarted", "inProgress", "complete"];
+  const tabs: { value: StatusFilter; label: string; emoji: string }[] = [
+    { value: "all",        label: "All",         emoji: "🏘️" },
+    { value: "notStarted", label: "Not Started", emoji: "⏳" },
+    { value: "inProgress", label: "In Progress", emoji: "🔍" },
+    { value: "complete",   label: "Complete",    emoji: "✅" },
+  ];
+
+  const totalComplete = (properties ?? []).filter(p => p.status === "complete").length;
+  const totalAll = (properties ?? []).length;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top nav */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <h1 className="font-bold text-lg">HOA Inspection Helper</h1>
-        <div className="flex gap-3 items-center">
-          <button
-            className="text-sm text-blue-600 hover:underline"
-            onClick={() => navigate("/admin/settings")}
-          >
-            Settings
-          </button>
-          <button
-            className="text-sm text-muted-foreground hover:underline"
-            onClick={() => {
-              localStorage.removeItem("hoa_admin");
-              navigate("/");
-            }}
-          >
-            Logout
-          </button>
+    <div className="min-h-screen bg-[#f8f7ff]">
+      {/* Header */}
+      <div className="gradient-admin px-4 pt-10 pb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-purple-200 text-sm font-medium uppercase tracking-widest">Admin</p>
+            <h1 className="text-white font-extrabold text-2xl">HOA Dashboard 📋</h1>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+              onClick={() => navigate("/admin/settings")}
+            >
+              ⚙️ Settings
+            </button>
+            <button
+              className="text-sm bg-white/10 hover:bg-white/20 text-white/70 px-3 py-1.5 rounded-full border border-white/20 transition-colors"
+              onClick={() => { localStorage.removeItem("hoa_admin"); navigate("/"); }}
+            >
+              Logout
+            </button>
+          </div>
         </div>
+        {totalAll > 0 && (
+          <div className="mt-4">
+            <div className="flex justify-between text-sm text-purple-200 mb-1.5">
+              <span>Overall progress</span>
+              <span>{totalComplete}/{totalAll} complete</span>
+            </div>
+            <div className="w-full bg-white/20 rounded-full h-2">
+              <div
+                className="h-2 rounded-full bg-gradient-to-r from-yellow-400 to-lime-400 transition-all duration-500"
+                style={{ width: `${totalAll > 0 ? (totalComplete / totalAll) * 100 : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-6">
+      <div className="max-w-5xl mx-auto px-4 py-5">
         {toast && (
-          <div className="mb-4 p-3 bg-green-100 text-green-800 rounded text-sm">{toast}</div>
+          <div className="mb-4 p-3 bg-green-50 text-green-800 rounded-xl border border-green-200 text-sm font-medium">
+            {toast}
+          </div>
         )}
 
-        {/* Filter tabs + search + import */}
+        {/* Controls */}
         <div className="flex flex-wrap gap-2 items-center mb-4">
-          <div className="flex gap-1">
+          <div className="flex gap-1.5 flex-wrap">
             {tabs.map((t) => (
               <button
-                key={t}
-                className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
-                  statusFilter === t
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "border-input hover:bg-accent"
+                key={t.value}
+                className={`btn-bounce px-3 py-1.5 text-sm rounded-full font-semibold transition-all ${
+                  statusFilter === t.value
+                    ? "bg-violet-600 text-white shadow-md"
+                    : "bg-white text-gray-600 border border-gray-200 hover:border-violet-300"
                 }`}
-                onClick={() => setStatusFilter(t)}
+                onClick={() => setStatusFilter(t.value)}
               >
-                {t === "all" ? "All" : STATUS_LABELS[t]}
+                {t.emoji} {t.label}
               </button>
             ))}
           </div>
           <div className="flex-1 min-w-40">
-            <Input
-              placeholder="Search address..."
+            <input
+              placeholder="🔍 Search address..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="h-8 text-sm"
+              className="w-full px-3 py-1.5 text-sm rounded-full border border-gray-200 bg-white focus:outline-none focus:border-violet-400 transition-colors"
             />
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".csv"
-            className="hidden"
-            onChange={handleCSVChange}
-          />
-          <Button
-            size="sm"
-            variant="outline"
+          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCSVChange} />
+          <button
+            className="btn-bounce px-4 py-1.5 text-sm rounded-full bg-violet-600 text-white font-semibold shadow-sm hover:bg-violet-700 transition-colors disabled:opacity-50"
             disabled={csvUploading}
             onClick={() => fileInputRef.current?.click()}
           >
-            {csvUploading ? "Importing..." : "Import CSV"}
-          </Button>
+            {csvUploading ? "Importing..." : "📥 Import CSV"}
+          </button>
         </div>
 
         {/* Table */}
-        <div className="border rounded-lg overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-muted">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium">Address</th>
-                <th className="text-left px-4 py-3 font-medium hidden sm:table-cell">Street</th>
-                <th className="text-left px-4 py-3 font-medium">Status</th>
-                <th className="text-right px-4 py-3 font-medium">Action</th>
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Address</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide hidden sm:table-cell">Street</th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Status</th>
+                <th className="text-right px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                    {properties === undefined ? "Loading..." : "No properties found"}
+                  <td colSpan={4} className="px-4 py-12 text-center">
+                    <div className="text-4xl mb-2">{properties === undefined ? "⏳" : "🏚️"}</div>
+                    <p className="text-gray-400 font-medium">
+                      {properties === undefined ? "Loading..." : "No properties found"}
+                    </p>
                   </td>
                 </tr>
               )}
-              {filtered.map((p) => (
-                <tr key={p._id} className="hover:bg-accent/50 cursor-pointer" onClick={() => navigate(`/admin/property/${p._id}`)}>
-                  <td className="px-4 py-3">{p.address}</td>
-                  <td className="px-4 py-3 hidden sm:table-cell text-muted-foreground">
-                    {streetMap.get(p.streetId) ?? "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant={STATUS_VARIANTS[p.status]}>
-                      {STATUS_LABELS[p.status]}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/admin/property/${p._id}`);
-                      }}
-                    >
-                      Review
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((p) => {
+                const cfg = STATUS_CONFIG[p.status] ?? STATUS_CONFIG.notStarted;
+                return (
+                  <tr
+                    key={p._id}
+                    className="hover:bg-violet-50/50 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/admin/property/${p._id}`)}
+                  >
+                    <td className="px-4 py-3 font-medium text-gray-800">{p.address}</td>
+                    <td className="px-4 py-3 hidden sm:table-cell text-gray-400 text-xs">
+                      {streetMap.get(p.streetId) ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.bg} ${cfg.color}`}>
+                        {cfg.emoji} {cfg.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        className="btn-bounce px-3 py-1.5 text-xs rounded-full bg-violet-100 text-violet-700 font-semibold hover:bg-violet-200 transition-colors"
+                        onClick={(e) => { e.stopPropagation(); navigate(`/admin/property/${p._id}`); }}
+                      >
+                        Review →
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

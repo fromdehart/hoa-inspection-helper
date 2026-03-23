@@ -3,8 +3,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { uploadPhoto } from "@/lib/uploadClient";
 
@@ -17,10 +15,16 @@ const ANALYSIS_ICONS: Record<string, string> = {
   error: "❌",
 };
 
-const SEV_BORDER: Record<string, string> = {
-  high: "border-l-4 border-red-500 bg-red-50",
-  medium: "border-l-4 border-amber-500 bg-amber-50",
-  low: "border-l-4 border-green-500 bg-green-50",
+const SEV_CONFIG: Record<string, { bar: string; bg: string; text: string }> = {
+  high:   { bar: "border-l-4 border-red-500",    bg: "bg-red-50",    text: "text-red-700" },
+  medium: { bar: "border-l-4 border-amber-500",  bg: "bg-amber-50",  text: "text-amber-700" },
+  low:    { bar: "border-l-4 border-green-500",  bg: "bg-green-50",  text: "text-green-700" },
+};
+
+const SECTION_EMOJI: Record<Section, string> = {
+  front: "🏠",
+  side: "🏡",
+  back: "🌳",
 };
 
 export default function PropertyCapture() {
@@ -57,7 +61,6 @@ export default function PropertyCapture() {
 
   const sectionPhotos = (photos ?? []).filter((p) => p.section === currentSection);
 
-  // Compute next property in walk order
   const walkList = streetData?.properties ?? [];
   const currentIdx = walkList.findIndex((p) => p._id === pid);
   const nextProperty = currentIdx >= 0 ? walkList[currentIdx + 1] : undefined;
@@ -76,7 +79,6 @@ export default function PropertyCapture() {
       });
       setLastUploadedPhotoId(photoId);
     } catch (err) {
-      console.error("Photo upload failed:", err);
       alert("Upload failed: " + String(err));
     } finally {
       setUploading(false);
@@ -125,68 +127,79 @@ export default function PropertyCapture() {
   };
 
   if (!property) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gradient-hero">
+        <div className="text-5xl animate-spin mb-4">🔄</div>
+        <p className="text-white font-medium">Loading property...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-background pb-20 flex flex-col">
-      {/* Top: address + section tabs */}
-      <div className="border-b">
-        <div className="flex items-center justify-between px-4 py-3">
+    <div className="min-h-screen bg-[#f8f7ff] pb-24 flex flex-col">
+      {/* Header */}
+      <div className="gradient-inspector px-4 pt-8 pb-4">
+        <div className="flex items-center justify-between mb-3">
           <button
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sky-100 hover:text-white text-sm font-medium transition-colors"
             onClick={() => navigate(`/inspector/street/${property.streetId}`)}
           >
-            ← Back
+            ← Street
           </button>
-          <h1 className="font-semibold text-sm truncate max-w-xs">{property.address}</h1>
+          <h1 className="font-bold text-white text-sm truncate max-w-[200px]">
+            {property.address}
+          </h1>
           <div className="w-12" />
         </div>
-        <div className="flex px-4 gap-4 pb-2">
+
+        {/* Section tabs */}
+        <div className="flex gap-2">
           {(["front", "side", "back"] as Section[]).map((sec) => (
             <button
               key={sec}
-              className={`text-sm pb-1 capitalize transition-colors ${
+              className={`btn-bounce flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
                 currentSection === sec
-                  ? "font-bold border-b-2 border-primary"
-                  : "text-muted-foreground"
+                  ? "bg-white text-sky-700 shadow-sm"
+                  : "bg-white/20 text-white/80 hover:bg-white/30"
               }`}
               onClick={() => setCurrentSection(sec)}
             >
-              {sec}
+              {SECTION_EMOJI[sec]} {sec.charAt(0).toUpperCase() + sec.slice(1)}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Scrollable content */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        {/* Camera capture */}
-        <div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={handlePhotoSelected}
-          />
-          <Button
-            className="w-full h-12"
-            disabled={uploading}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {uploading ? (
-              <span className="flex items-center gap-2">
-                <span className="animate-spin">⏳</span> Uploading...
-              </span>
-            ) : (
-              "Take Photo"
-            )}
-          </Button>
-        </div>
+        {/* Camera button */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handlePhotoSelected}
+        />
+        <button
+          className={`btn-bounce w-full py-4 rounded-2xl font-bold text-lg shadow-sm border-2 transition-all ${
+            uploading
+              ? "bg-gray-100 border-gray-200 text-gray-400"
+              : "bg-white border-dashed border-sky-300 text-sky-600 hover:bg-sky-50"
+          }`}
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploading ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="animate-spin">⏳</span> Uploading...
+            </span>
+          ) : (
+            "📸 Take Photo"
+          )}
+        </button>
 
-        {/* Photo thumbnails for current section */}
+        {/* Photo strip */}
         {sectionPhotos.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
             {sectionPhotos.map((photo) => (
@@ -194,7 +207,7 @@ export default function PropertyCapture() {
                 <img
                   src={photo.publicUrl}
                   alt="section photo"
-                  className="w-20 h-20 object-cover rounded border"
+                  className="w-20 h-20 object-cover rounded-xl border-2 border-white shadow-sm"
                 />
                 <span className="absolute bottom-0.5 right-0.5 text-sm">
                   {ANALYSIS_ICONS[photo.analysisStatus]}
@@ -204,52 +217,57 @@ export default function PropertyCapture() {
           </div>
         )}
 
-        {/* Violations panel */}
-        <div>
-          <h2 className="text-sm font-semibold mb-2">
-            Violations ({violations?.length ?? 0})
+        {/* Violations */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <h2 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            ⚠️ Violations
+            <span className="ml-auto bg-gray-100 text-gray-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+              {violations?.length ?? 0}
+            </span>
           </h2>
           {(violations ?? []).length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              No violations yet — AI results appear here automatically
+            <p className="text-gray-400 text-sm">
+              No violations yet — AI results appear here automatically ✨
             </p>
           ) : (
             <div className="space-y-2">
-              {(violations ?? []).map((v) => (
-                <div
-                  key={v._id}
-                  className={`rounded p-2 text-sm ${SEV_BORDER[v.severity ?? "low"] ?? "border-l-4"}`}
-                >
-                  <p className="font-medium">{v.description}</p>
-                  <div className="flex gap-1 mt-1">
-                    <Badge variant="outline" className="text-xs">
-                      {v.severity ?? "N/A"}
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      {v.aiGenerated ? "AI" : "Manual"}
-                    </Badge>
+              {(violations ?? []).map((v) => {
+                const cfg = SEV_CONFIG[v.severity ?? "low"] ?? SEV_CONFIG.low;
+                return (
+                  <div key={v._id} className={`rounded-xl p-3 text-sm ${cfg.bar} ${cfg.bg}`}>
+                    <p className={`font-semibold ${cfg.text}`}>{v.description}</p>
+                    <div className="flex gap-1 mt-1.5">
+                      <Badge variant="outline" className="text-xs capitalize">
+                        {v.severity ?? "N/A"}
+                      </Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        {v.aiGenerated ? "🤖 AI" : "✏️ Manual"}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Note textarea */}
+        {/* Note input */}
         {lastUploadedPhotoId && (
-          <div>
-            <h2 className="text-sm font-semibold mb-1">Note for last photo</h2>
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <h2 className="font-bold text-gray-800 mb-2">📝 Note for last photo</h2>
             <div className="flex gap-2">
-              <Textarea
+              <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Add note or tap mic..."
+                placeholder="Add a note or tap the mic..."
                 rows={2}
-                className="flex-1 text-sm"
+                className="flex-1 text-sm px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-sky-400 resize-none transition-colors"
               />
               <button
-                className={`px-3 py-1 rounded border text-lg transition-colors ${
-                  listening ? "animate-pulse bg-red-100 border-red-400" : "hover:bg-accent"
+                className={`px-3 py-2 rounded-xl text-xl transition-all ${
+                  listening
+                    ? "animate-pulse bg-red-100 border-2 border-red-400"
+                    : "bg-gray-100 hover:bg-gray-200 border-2 border-transparent"
                 }`}
                 onClick={handleMic}
                 title="Speech to text"
@@ -257,24 +275,28 @@ export default function PropertyCapture() {
                 🎤
               </button>
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              <Button size="sm" variant="outline" onClick={handleSaveNote} disabled={savingNote}>
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                className="btn-bounce px-4 py-1.5 text-sm rounded-full bg-sky-100 text-sky-700 font-semibold hover:bg-sky-200 transition-colors disabled:opacity-50"
+                onClick={handleSaveNote}
+                disabled={savingNote}
+              >
                 {savingNote ? "Saving..." : "Save Note"}
-              </Button>
-              {noteSaved && <span className="text-xs text-green-600">Saved</span>}
+              </button>
+              {noteSaved && <span className="text-xs text-green-600 font-medium">✓ Saved!</span>}
             </div>
           </div>
         )}
       </div>
 
-      {/* Sticky Next House bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-3 bg-background border-t">
-        <Button
-          className="w-full h-12 text-base bg-green-600 hover:bg-green-700 text-white"
+      {/* Sticky footer */}
+      <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/90 backdrop-blur border-t border-gray-100">
+        <button
+          className="btn-bounce w-full py-4 rounded-2xl font-bold text-lg gradient-success text-white shadow-lg"
           onClick={handleNextHouse}
         >
-          {nextProperty ? `Next House →` : "Complete Street ✓"}
-        </Button>
+          {nextProperty ? `Next House → 🏠` : "Complete Street 🎉"}
+        </button>
       </div>
     </div>
   );
