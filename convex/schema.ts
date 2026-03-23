@@ -2,36 +2,95 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-  events: defineTable({
-    challengeId: v.string(),
-    sessionId: v.string(),
-    eventName: v.string(),
-    metadata: v.any(),
-    timestamp: v.number(),
-  }).index("by_challengeId", ["challengeId"]),
+  streets: defineTable({
+    name: v.string(),
+    createdAt: v.number(),
+  }).index("by_name", ["name"]),
 
-  data: defineTable({
-    challengeId: v.string(),
+  properties: defineTable({
+    streetId: v.id("streets"),
+    address: v.string(),
+    houseNumber: v.number(),
+    email: v.optional(v.string()),
+    status: v.union(
+      v.literal("notStarted"),
+      v.literal("inProgress"),
+      v.literal("complete"),
+    ),
+    accessToken: v.string(),
+    letterSentAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_street", ["streetId"])
+    .index("by_token", ["accessToken"])
+    .index("by_status", ["status"]),
+
+  photos: defineTable({
+    propertyId: v.id("properties"),
+    section: v.union(
+      v.literal("front"),
+      v.literal("side"),
+      v.literal("back"),
+    ),
+    filePath: v.string(),
+    publicUrl: v.string(),
+    uploadedAt: v.number(),
+    inspectorNote: v.optional(v.string()),
+    analysisStatus: v.union(
+      v.literal("pending"),
+      v.literal("processing"),
+      v.literal("done"),
+      v.literal("error"),
+    ),
+  }).index("by_property", ["propertyId"]),
+
+  violations: defineTable({
+    propertyId: v.id("properties"),
+    photoId: v.optional(v.id("photos")),
+    description: v.string(),
+    severity: v.optional(v.union(
+      v.literal("low"),
+      v.literal("medium"),
+      v.literal("high"),
+    )),
+    aiGenerated: v.boolean(),
+    adminNote: v.optional(v.string()),
+    status: v.union(
+      v.literal("open"),
+      v.literal("resolved"),
+      v.literal("needsReview"),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_property", ["propertyId"])
+    .index("by_photo", ["photoId"]),
+
+  fixPhotos: defineTable({
+    propertyId: v.id("properties"),
+    violationId: v.optional(v.id("violations")),
+    filePath: v.string(),
+    publicUrl: v.string(),
+    uploadedAt: v.number(),
+    verificationStatus: v.union(
+      v.literal("pending"),
+      v.literal("resolved"),
+      v.literal("notResolved"),
+      v.literal("needsReview"),
+    ),
+    verificationNote: v.optional(v.string()),
+  })
+    .index("by_property", ["propertyId"])
+    .index("by_violation", ["violationId"]),
+
+  aiConfig: defineTable({
     key: v.string(),
-    value: v.any(),
-    createdAt: v.number(),
-  })
-    .index("by_challengeId", ["challengeId"])
-    .index("by_challenge_and_key", ["challengeId", "key"]),
+    value: v.string(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 
-  votes: defineTable({
-    challengeId: v.string(),
-    sessionId: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_challengeId", ["challengeId"])
-    .index("by_challenge_and_session", ["challengeId", "sessionId"]),
-
-  leads: defineTable({
-    challengeId: v.string(),
-    email: v.string(),
-    createdAt: v.number(),
-  })
-    .index("by_challengeId", ["challengeId"])
-    .index("by_challenge_and_email", ["challengeId", "email"]),
+  templates: defineTable({
+    type: v.union(v.literal("report"), v.literal("letter")),
+    content: v.string(),
+    updatedAt: v.number(),
+  }).index("by_type", ["type"]),
 });

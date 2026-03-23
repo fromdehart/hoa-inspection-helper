@@ -1,46 +1,33 @@
-import { useState, useCallback } from "react";
 import { ConvexProvider } from "convex/react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { convex } from "./lib/convexClient";
-import { VoteATron3000 } from "./components/VoteATron3000";
-import { VoteATronErrorBoundary } from "./components/VoteATronErrorBoundary";
-import { GateScreen } from "./components/GateScreen";
-import Index from "./pages/Index";
-
-const GATE_STORAGE_KEY = "one-shot-gate";
-
-function useGateAccess(challengeId: string) {
-  const storageKey = `${GATE_STORAGE_KEY}-${challengeId || "default"}`;
-  const [granted, setGranted] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(storageKey) === "true";
-  });
-  const grantAccess = useCallback(() => setGranted(true), []);
-  return { granted, grantAccess };
-}
+import Landing from "./pages/Landing";
+import AdminGate from "./pages/admin/AdminGate";
+import Dashboard from "./pages/admin/Dashboard";
+import Settings from "./pages/admin/Settings";
+import PropertyReview from "./pages/admin/PropertyReview";
+import InspectorGate from "./pages/inspector/InspectorGate";
+import StreetList from "./pages/inspector/StreetList";
+import PropertyList from "./pages/inspector/PropertyList";
+import PropertyCapture from "./pages/inspector/PropertyCapture";
+import HomeownerPortal from "./pages/portal/HomeownerPortal";
 
 const App = () => {
-  const challengeId = import.meta.env.VITE_CHALLENGE_ID ?? "default";
-  const { granted, grantAccess } = useGateAccess(challengeId);
-
   return (
     <ConvexProvider client={convex}>
       <BrowserRouter>
         <Routes>
-          <Route
-            path="/"
-            element={
-              granted ? (
-                <Index />
-              ) : (
-                <GateScreen challengeId={challengeId} onAccessGranted={grantAccess} />
-              )
-            }
-          />
+          <Route path="/" element={<Landing />} />
+          <Route path="/admin" element={<AdminGate />} />
+          <Route path="/admin/dashboard" element={<Dashboard />} />
+          <Route path="/admin/settings" element={<Settings />} />
+          <Route path="/admin/property/:propertyId" element={<PropertyReview />} />
+          <Route path="/inspector" element={<InspectorGate />} />
+          <Route path="/inspector/streets" element={<StreetList />} />
+          <Route path="/inspector/street/:streetId" element={<PropertyList />} />
+          <Route path="/inspector/property/:propertyId" element={<PropertyCapture />} />
+          <Route path="/portal/:token" element={<HomeownerPortal />} />
         </Routes>
-        <VoteATronErrorBoundary>
-          <VoteATron3000 />
-        </VoteATronErrorBoundary>
       </BrowserRouter>
     </ConvexProvider>
   );
