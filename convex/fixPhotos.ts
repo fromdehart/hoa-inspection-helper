@@ -20,19 +20,26 @@ export const getById = internalQuery({
   },
 });
 
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
 export const create = mutation({
   args: {
     propertyId: v.id("properties"),
     violationId: v.optional(v.id("violations")),
-    filePath: v.string(),
-    publicUrl: v.string(),
+    storageId: v.string(),
   },
   handler: async (ctx, args) => {
+    const publicUrl = await ctx.storage.getUrl(args.storageId as any) ?? "";
     const fixPhotoId = await ctx.db.insert("fixPhotos", {
       propertyId: args.propertyId,
       violationId: args.violationId,
-      filePath: args.filePath,
-      publicUrl: args.publicUrl,
+      filePath: args.storageId,
+      publicUrl,
       uploadedAt: Date.now(),
       verificationStatus: "pending",
     });

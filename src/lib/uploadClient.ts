@@ -1,11 +1,11 @@
-const BASE = import.meta.env.VITE_UPLOAD_SERVER_URL ?? "http://localhost:3001";
-
-export async function uploadPhoto(file: File, propertyId: string, section: string) {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("propertyId", propertyId);
-  fd.append("section", section);
-  const res = await fetch(`${BASE}/api/upload`, { method: "POST", body: fd });
+// Upload a photo directly to Convex file storage (no separate server needed)
+export async function uploadToConvex(file: File, uploadUrl: string): Promise<string> {
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
   if (!res.ok) throw new Error("Upload failed: " + res.status);
-  return res.json() as Promise<{ publicUrl: string; filePath: string }>;
+  const { storageId } = await res.json();
+  return storageId as string;
 }

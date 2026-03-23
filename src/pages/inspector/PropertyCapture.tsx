@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
-import { uploadPhoto } from "@/lib/uploadClient";
+import { uploadToConvex } from "@/lib/uploadClient";
 
 type Section = "front" | "side" | "back";
 
@@ -56,6 +56,7 @@ export default function PropertyCapture() {
     property?.streetId ? { streetId: property.streetId } : "skip",
   );
 
+  const generateUploadUrl = useMutation(api.photos.generateUploadUrl);
   const createPhoto = useMutation(api.photos.create);
   const updateNote = useMutation(api.photos.updateNote);
   const updateStatus = useMutation(api.properties.updateStatus);
@@ -71,12 +72,12 @@ export default function PropertyCapture() {
     if (!file) return;
     setUploading(true);
     try {
-      const result = await uploadPhoto(file, propertyId!, currentSection);
+      const uploadUrl = await generateUploadUrl();
+      const storageId = await uploadToConvex(file, uploadUrl);
       const photoId = await createPhoto({
         propertyId: pid,
         section: currentSection,
-        filePath: result.filePath,
-        publicUrl: result.publicUrl,
+        storageId,
       });
       setLastUploadedPhotoId(photoId);
     } catch (err) {

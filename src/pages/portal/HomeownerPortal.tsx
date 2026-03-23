@@ -5,7 +5,7 @@ import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { uploadPhoto } from "@/lib/uploadClient";
+import { uploadToConvex } from "@/lib/uploadClient";
 
 const SEV_COLORS: Record<string, string> = {
   high: "bg-red-50 border border-red-200",
@@ -42,6 +42,7 @@ export default function HomeownerPortal() {
     property ? { propertyId: property._id as Id<"properties"> } : "skip",
   );
 
+  const generateUploadUrl = useMutation(api.fixPhotos.generateUploadUrl);
   const createFixPhoto = useMutation(api.fixPhotos.create);
 
   if (property === undefined) {
@@ -68,12 +69,12 @@ export default function HomeownerPortal() {
   ) => {
     setUploadingForViolationId(violationId);
     try {
-      const result = await uploadPhoto(file, pid, "fix");
+      const uploadUrl = await generateUploadUrl();
+      const storageId = await uploadToConvex(file, uploadUrl);
       await createFixPhoto({
         propertyId: pid,
         violationId,
-        filePath: result.filePath,
-        publicUrl: result.publicUrl,
+        storageId,
       });
     } catch (err) {
       alert("Upload failed: " + String(err));
