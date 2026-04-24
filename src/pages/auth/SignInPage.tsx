@@ -1,11 +1,19 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { SignIn, useAuth, useUser } from "@clerk/clerk-react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
+import { resolvePostSignInRedirect } from "@/lib/postSignInRedirect";
 
 export default function SignInPage() {
+  const location = useLocation();
   const { isLoaded, isSignedIn, userId } = useAuth();
   const { user } = useUser();
+  const afterSignInPath = useMemo(
+    () => resolvePostSignInRedirect(location.state),
+    [location.state],
+  );
+  const afterSignInAbsolute =
+    typeof window !== "undefined" ? `${window.location.origin}${afterSignInPath}` : afterSignInPath;
 
   useEffect(() => {
     if (!isLoaded) {
@@ -25,7 +33,8 @@ export default function SignInPage() {
   }
 
   if (isSignedIn) {
-    return <Navigate to="/" replace />;
+    authLog("SignInPage", "post_login_redirect", { to: afterSignInPath });
+    return <Navigate to={afterSignInPath} replace />;
   }
 
   return (
@@ -39,9 +48,7 @@ export default function SignInPage() {
         </div>
         <div className="mx-auto flex justify-center">
           <SignIn
-            routing="path"
-            path="/sign-in"
-            fallbackRedirectUrl="/"
+            fallbackRedirectUrl={afterSignInAbsolute}
             appearance={{
               elements: {
                 footerAction: "hidden",

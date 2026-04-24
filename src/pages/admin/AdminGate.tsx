@@ -49,7 +49,7 @@ export default function AdminGate() {
   }
 
   if (!isSignedIn) {
-    return <Navigate to="/sign-in" replace />;
+    return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
   }
 
   if (role !== "admin") {
