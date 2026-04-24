@@ -1,8 +1,24 @@
-import { SignIn, useAuth } from "@clerk/clerk-react";
+import { useEffect } from "react";
+import { SignIn, useAuth, useUser } from "@clerk/clerk-react";
 import { Navigate } from "react-router-dom";
+import { authLog, authUserSnapshot } from "@/lib/authLog";
 
 export default function SignInPage() {
-  const { isLoaded, isSignedIn } = useAuth();
+  const { isLoaded, isSignedIn, userId } = useAuth();
+  const { user } = useUser();
+
+  useEffect(() => {
+    if (!isLoaded) {
+      authLog("SignInPage", "clerk_loading", { path: window.location.pathname });
+      return;
+    }
+    authLog("SignInPage", "clerk_loaded", {
+      path: window.location.pathname,
+      isSignedIn,
+      clerkUserId: userId ?? user?.id ?? null,
+      user: authUserSnapshot(user),
+    });
+  }, [isLoaded, isSignedIn, userId, user]);
 
   if (!isLoaded) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -23,6 +39,8 @@ export default function SignInPage() {
         </div>
         <div className="mx-auto flex justify-center">
           <SignIn
+            routing="path"
+            path="/sign-in"
             fallbackRedirectUrl="/"
             appearance={{
               elements: {

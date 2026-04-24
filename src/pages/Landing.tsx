@@ -1,14 +1,8 @@
 import { useNavigate } from "react-router-dom";
-import { useAuth, useUser } from "@clerk/clerk-react";
 import { ONE_SHOT_VERSION } from "@/version";
-import { hasRole } from "@/lib/auth";
 
 export default function Landing() {
   const navigate = useNavigate();
-  const { isSignedIn } = useAuth();
-  const { user } = useUser();
-  const isAdmin = isSignedIn && hasRole(user, "admin");
-  const isInspector = isSignedIn && (hasRole(user, "inspector") || hasRole(user, "admin"));
 
   return (
     <div className="min-h-screen gradient-hero flex flex-col items-center justify-center px-6 py-12">
@@ -55,33 +49,6 @@ export default function Landing() {
           </div>
         </button>
       </div>
-
-      {/* Quick access */}
-      {(isAdmin || isInspector) && (
-        <div className="mt-8 bg-white/10 backdrop-blur rounded-2xl px-6 py-4 text-center border border-white/20">
-          <p className="text-white/60 text-xs uppercase tracking-widest font-semibold mb-3">Quick Access</p>
-          <div className="flex flex-col gap-2">
-            {isAdmin && (
-              <button
-                type="button"
-                className="text-yellow-300 hover:text-yellow-100 font-semibold text-sm transition-colors"
-                onClick={() => navigate("/admin/dashboard")}
-              >
-                Admin Dashboard →
-              </button>
-            )}
-            {isInspector && (
-              <button
-                type="button"
-                className="text-cyan-300 hover:text-cyan-100 font-semibold text-sm transition-colors"
-                onClick={() => navigate("/inspector/streets")}
-              >
-                Inspector Streets →
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       <p className="mt-10 text-white/20 text-xs">HOA Inspection Helper v{ONE_SHOT_VERSION}</p>
     </div>

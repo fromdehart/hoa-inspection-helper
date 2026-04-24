@@ -32,7 +32,8 @@ export default defineConfig({
     minify: "terser",
     terserOptions: {
       compress: {
-        drop_console: true,
+        // Keep console.* so [hoa-auth] logs work on Vercel when debugging Clerk/roles
+        drop_console: false,
         drop_debugger: true,
       },
     },

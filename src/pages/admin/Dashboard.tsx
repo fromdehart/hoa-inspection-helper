@@ -127,8 +127,10 @@ export default function Dashboard() {
     try {
       for (let i = 0; i < photoExportRows.length; i++) {
         const row = photoExportRows[i];
+        const streetFolder = sanitizeName(row.streetName) || "Unknown Street";
+        const houseFolder = sanitizeName(String(row.houseNumber)) || "unknown";
         setPhotoExportLog(
-          `Adding ${i + 1}/${photoExportRows.length}: ${row.houseNumber} ${row.streetName} (${row.section})`,
+          `Adding ${i + 1}/${photoExportRows.length}: ${streetFolder}/${houseFolder}/ (${row.section})`,
         );
         try {
           const res = await fetch(row.publicUrl);
@@ -137,14 +139,13 @@ export default function Dashboard() {
             continue;
           }
           const blob = await res.blob();
-          const streetFolder = sanitizeName(row.streetName) || "Unknown Street";
           const base = sanitizeName(`${row.houseNumber} ${row.streetName}`) || `${row.houseNumber}`;
           const ext = getExtFromPath(row.filePath || row.publicUrl);
-          const key = `${streetFolder}/${base}`;
+          const key = `${streetFolder}/${houseFolder}/${base}`;
           const count = (nameUse.get(key) ?? 0) + 1;
           nameUse.set(key, count);
           const filename = count === 1 ? `${base}${ext}` : `${base} (${count})${ext}`;
-          zip.file(`${streetFolder}/${filename}`, blob);
+          zip.file(`${streetFolder}/${houseFolder}/${filename}`, blob);
           added++;
         } catch {
           skipped++;

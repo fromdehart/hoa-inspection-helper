@@ -1,5 +1,5 @@
 import { ConvexProvider } from "convex/react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import { convex } from "./lib/convexClient";
 import RoleGuard from "./components/RoleGuard";
 import Landing from "./pages/Landing";
@@ -17,8 +17,7 @@ import SignInPage from "./pages/auth/SignInPage";
 const App = () => {
   return (
     <ConvexProvider client={convex}>
-      <BrowserRouter>
-        <Routes>
+      <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/sign-in" element={<SignInPage />} />
           <Route path="/admin" element={<AdminGate />} />
@@ -79,8 +78,7 @@ const App = () => {
               </RoleGuard>
             }
           />
-        </Routes>
-      </BrowserRouter>
+      </Routes>
     </ConvexProvider>
   );
 };

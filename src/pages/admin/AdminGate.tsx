@@ -1,19 +1,48 @@
 import { useEffect } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { getUserRole } from "@/lib/auth";
+import { authLog, authUserSnapshot } from "@/lib/authLog";
 
 export default function AdminGate() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const role = getUserRole(user);
 
   useEffect(() => {
+    const metaKey = JSON.stringify(user?.publicMetadata ?? {});
+    if (!isLoaded) {
+      authLog("AdminGate", "clerk_loading", { path: location.pathname });
+      return;
+    }
+    authLog("AdminGate", "state", {
+      path: location.pathname,
+      isSignedIn,
+      primaryRole: role,
+      user: authUserSnapshot(user),
+      metaKey,
+    });
+  }, [isLoaded, isSignedIn, role, user, location.pathname]);
+
+  useEffect(() => {
     if (isLoaded && isSignedIn && role === "admin") {
+      authLog("AdminGate", "redirect_dashboard", { to: "/admin/dashboard" });
       navigate("/admin/dashboard", { replace: true });
     }
   }, [isLoaded, isSignedIn, role, navigate]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    if (role === "admin") return;
+    authLog("AdminGate", "blocked_not_admin", {
+      path: location.pathname,
+      primaryRole: role,
+      user: authUserSnapshot(user),
+      hint: "Set publicMetadata.role or publicMetadata.roles in Clerk Dashboard for this user.",
+    });
+  }, [isLoaded, isSignedIn, role, user, location.pathname]);
 
   if (!isLoaded) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;

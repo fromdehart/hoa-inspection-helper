@@ -1,19 +1,45 @@
 import { useEffect } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { hasRole } from "@/lib/auth";
+import { authLog, authUserSnapshot } from "@/lib/authLog";
 
 export default function InspectorGate() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const canInspect = hasRole(user, "inspector") || hasRole(user, "admin");
 
   useEffect(() => {
+    if (!isLoaded) {
+      authLog("InspectorGate", "clerk_loading", { path: location.pathname });
+      return;
+    }
+    authLog("InspectorGate", "state", {
+      path: location.pathname,
+      isSignedIn,
+      canInspect,
+      user: authUserSnapshot(user),
+    });
+  }, [isLoaded, isSignedIn, canInspect, user, location.pathname]);
+
+  useEffect(() => {
     if (isLoaded && isSignedIn && canInspect) {
+      authLog("InspectorGate", "redirect_streets", { to: "/inspector/streets" });
       navigate("/inspector/streets", { replace: true });
     }
   }, [isLoaded, isSignedIn, canInspect, navigate]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    if (canInspect) return;
+    authLog("InspectorGate", "blocked_not_inspector", {
+      path: location.pathname,
+      user: authUserSnapshot(user),
+      hint: "Assign inspector or admin in Clerk publicMetadata.role / roles.",
+    });
+  }, [isLoaded, isSignedIn, canInspect, user, location.pathname]);
 
   if (!isLoaded) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
