@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const SEV_COLORS: Record<string, string> = {
@@ -37,6 +36,11 @@ export default function PropertyReview() {
   const [editNote, setEditNote] = useState("");
   const [editingInspectorNotes, setEditingInspectorNotes] = useState(false);
   const [inspectorNotesDraft, setInspectorNotesDraft] = useState("");
+  const [photoLightbox, setPhotoLightbox] = useState<{
+    url: string;
+    title: string;
+    caption?: string;
+  } | null>(null);
 
   const property = useQuery(api.properties.get, { id: pid });
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
@@ -167,29 +171,40 @@ export default function PropertyReview() {
           {/* Left: Photos */}
           <div>
             <h2 className="text-lg font-semibold mb-3">Photos</h2>
-            <Tabs defaultValue="front">
-              <TabsList>
-                <TabsTrigger value="front">Front ({photosBySection.front.length})</TabsTrigger>
-                <TabsTrigger value="side">Side ({photosBySection.side.length})</TabsTrigger>
-                <TabsTrigger value="back">Back ({photosBySection.back.length})</TabsTrigger>
-              </TabsList>
+            <div className="space-y-6">
               {(["front", "side", "back"] as const).map((sec) => (
-                <TabsContent key={sec} value={sec}>
+                <div key={sec}>
+                  <h3 className="text-sm font-semibold text-foreground mb-2 capitalize">
+                    {sec}{" "}
+                    <span className="font-normal text-muted-foreground">
+                      ({photosBySection[sec].length})
+                    </span>
+                  </h3>
                   {photosBySection[sec].length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4">No photos yet</p>
+                    <p className="text-sm text-muted-foreground">No photos yet</p>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
                       {photosBySection[sec].map((photo) => (
-                        <div key={photo._id} className="relative">
-                          <a href={photo.publicUrl} target="_blank" rel="noopener noreferrer">
+                        <div key={photo._id} className="relative min-w-0">
+                          <button
+                            type="button"
+                            className="w-full rounded border overflow-hidden text-left transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                            onClick={() =>
+                              setPhotoLightbox({
+                                url: photo.publicUrl,
+                                title: `${sec} photo`,
+                                caption: photo.inspectorNote?.trim() || undefined,
+                              })
+                            }
+                          >
                             <img
                               src={photo.publicUrl}
                               alt={`${sec} photo`}
-                              className="w-full h-32 object-cover rounded border"
+                              className="w-full h-32 object-cover"
                             />
-                          </a>
+                          </button>
                           {photo.inspectorNote && (
-                            <p className="text-xs text-muted-foreground mt-1 truncate">
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                               {photo.inspectorNote}
                             </p>
                           )}
@@ -197,9 +212,9 @@ export default function PropertyReview() {
                       ))}
                     </div>
                   )}
-                </TabsContent>
+                </div>
               ))}
-            </Tabs>
+            </div>
           </div>
 
           {/* Right: Violations + Actions */}
@@ -443,13 +458,22 @@ export default function PropertyReview() {
                             <div className="mt-2 space-y-2 border-t pt-2">
                               {fixPhotoForViolation.map((fp) => (
                                 <div key={fp._id} className="flex flex-wrap gap-2 items-start">
-                                  <a href={fp.publicUrl} target="_blank" rel="noopener noreferrer">
+                                  <button
+                                    type="button"
+                                    className="shrink-0 rounded border overflow-hidden transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                    onClick={() =>
+                                      setPhotoLightbox({
+                                        url: fp.publicUrl,
+                                        title: "Homeowner fix photo",
+                                      })
+                                    }
+                                  >
                                     <img
                                       src={fp.publicUrl}
                                       alt="fix"
-                                      className="w-20 h-20 object-cover rounded border"
+                                      className="w-20 h-20 object-cover"
                                     />
-                                  </a>
+                                  </button>
                                   <div className="flex-1 min-w-[140px] space-y-1">
                                     <Select
                                       value={fp.verificationStatus}
@@ -557,9 +581,18 @@ export default function PropertyReview() {
                   .filter((fp) => !fp.violationId)
                   .map((fp) => (
                     <div key={fp._id} className="flex flex-wrap gap-2 items-start">
-                      <a href={fp.publicUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={fp.publicUrl} alt="fix" className="w-20 h-20 object-cover rounded border" />
-                      </a>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded border overflow-hidden transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        onClick={() =>
+                          setPhotoLightbox({
+                            url: fp.publicUrl,
+                            title: "Homeowner fix photo",
+                          })
+                        }
+                      >
+                        <img src={fp.publicUrl} alt="fix" className="w-20 h-20 object-cover" />
+                      </button>
                       <Select
                         value={fp.verificationStatus}
                         onValueChange={async (status) => {
@@ -587,6 +620,42 @@ export default function PropertyReview() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={!!photoLightbox}
+        onOpenChange={(open) => {
+          if (!open) setPhotoLightbox(null);
+        }}
+      >
+        <DialogContent className="max-w-[min(95vw,56rem)] gap-0 p-0 sm:max-w-[min(95vw,56rem)]">
+          {photoLightbox && (
+            <>
+              <DialogHeader className="space-y-0 px-6 pt-6 pb-2 pr-14 text-left">
+                <DialogTitle className="capitalize">{photoLightbox.title}</DialogTitle>
+              </DialogHeader>
+              <div className="px-6 pb-4">
+                <img
+                  src={photoLightbox.url}
+                  alt=""
+                  className="mx-auto max-h-[min(85vh,880px)] w-full object-contain rounded-md bg-muted"
+                />
+              </div>
+              {photoLightbox.caption ? (
+                <p className="border-t px-6 py-3 text-sm text-muted-foreground whitespace-pre-wrap">
+                  {photoLightbox.caption}
+                </p>
+              ) : null}
+              <DialogFooter className="border-t px-6 py-4 sm:justify-start">
+                <Button variant="outline" size="sm" asChild>
+                  <a href={photoLightbox.url} target="_blank" rel="noopener noreferrer">
+                    Open in new tab
+                  </a>
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Letter preview dialog */}
       <Dialog open={showPreview} onOpenChange={setShowPreview}>

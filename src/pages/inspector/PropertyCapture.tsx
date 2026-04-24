@@ -20,11 +20,21 @@ export default function PropertyCapture() {
 
   const [currentSection, setCurrentSection] = useState<Section>("front");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [note, setNote] = useState("");
   const [listening, setListening] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
+  const [noteSaveState, setNoteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const noteAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteInitializedRef = useRef(false);
+  const lastPersistedNoteRef = useRef("");
+  /** Avoid re-hydrating note from Convex on every refetch (causes textarea + status flash after autosave). */
+  const noteHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
 
   const property = useQuery(api.properties.get, { id: pid });
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
@@ -34,11 +44,58 @@ export default function PropertyCapture() {
   );
 
   const createPhoto = useMutation(api.photos.create);
+  const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
 
   useEffect(() => {
-    if (property && property._id === pid) setNote(property.inspectorNotes ?? "");
-  }, [property?._id, pid, property?.inspectorNotes]); // eslint-disable-line react-hooks/exhaustive-deps -- sync when switching houses
+    noteHydratedForPropertyIdRef.current = null;
+    noteInitializedRef.current = false;
+    if (noteAutosaveTimerRef.current) {
+      clearTimeout(noteAutosaveTimerRef.current);
+      noteAutosaveTimerRef.current = null;
+    }
+  }, [pid]);
+
+  useEffect(() => {
+    if (!property || property._id !== pid) return;
+    if (noteHydratedForPropertyIdRef.current === pid) return;
+
+    noteHydratedForPropertyIdRef.current = pid;
+    const initialNote = property.inspectorNotes ?? "";
+    setNote(initialNote);
+    lastPersistedNoteRef.current = initialNote;
+    noteInitializedRef.current = true;
+    setNoteSaveState("idle");
+    setLastSavedAt(null);
+  }, [pid, property]);
+
+  useEffect(() => {
+    return () => {
+      if (noteAutosaveTimerRef.current) {
+        clearTimeout(noteAutosaveTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!noteInitializedRef.current) return;
+    if (note === lastPersistedNoteRef.current) return;
+
+    if (noteAutosaveTimerRef.current) clearTimeout(noteAutosaveTimerRef.current);
+
+    noteAutosaveTimerRef.current = setTimeout(async () => {
+      try {
+        setNoteSaveState("saving");
+        await updateInspectorNotes({ id: pid, inspectorNotes: note });
+        lastPersistedNoteRef.current = note;
+        setLastSavedAt(Date.now());
+        setNoteSaveState("saved");
+      } catch (err) {
+        console.error("Autosave failed:", err);
+        setNoteSaveState("error");
+      }
+    }, 1200);
+  }, [note, pid, updateInspectorNotes]);
 
   const sectionPhotos = (photos ?? []).filter((p) => p.section === currentSection);
 
@@ -47,25 +104,48 @@ export default function PropertyCapture() {
   const nextProperty = currentIdx >= 0 ? walkList[currentIdx + 1] : undefined;
 
   const handlePhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
     setUploading(true);
+    setUploadProgress({ current: 0, total: files.length });
+    let failed = 0;
     try {
-      const result = await uploadPhoto(file, propertyId!, currentSection);
-      await createPhoto({
-        propertyId: pid,
-        section: currentSection,
-        filePath: result.filePath,
-        publicUrl: result.publicUrl,
-      });
-    } catch (err) {
-      console.error("Photo upload failed:", err);
-      alert("Upload failed: " + String(err));
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        setUploadProgress({ current: i + 1, total: files.length });
+        try {
+          const result = await uploadPhoto(file, propertyId!, currentSection);
+          await createPhoto({
+            propertyId: pid,
+            section: currentSection,
+            filePath: result.filePath,
+            publicUrl: result.publicUrl,
+          });
+        } catch (err) {
+          failed++;
+          console.error("Photo upload failed:", err);
+        }
+      }
+      if (failed > 0) {
+        alert(
+          `Uploaded ${files.length - failed}/${files.length} photos. ${failed} failed — please retry those.`,
+        );
+      }
     } finally {
       setUploading(false);
+      setUploadProgress(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  const openViewerAt = (index: number) => {
+    setSelectedPhotoIndex(index);
+    setViewerOpen(true);
+  };
+
+  const selectedPhoto = sectionPhotos[selectedPhotoIndex];
+  const canGoPrev = selectedPhotoIndex > 0;
+  const canGoNext = selectedPhotoIndex < sectionPhotos.length - 1;
 
   const stopBrowserSpeech = () => {
     try {
@@ -110,6 +190,7 @@ export default function PropertyCapture() {
 
   const handleNextHouse = async () => {
     stopBrowserSpeech();
+    if (noteAutosaveTimerRef.current) clearTimeout(noteAutosaveTimerRef.current);
     setNextLoading(true);
     try {
       await completeHouse({ id: pid, inspectorNotes: note });
@@ -194,6 +275,7 @@ export default function PropertyCapture() {
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          multiple
           capture="environment"
           className="hidden"
           onChange={handlePhotoSelected}
@@ -210,7 +292,8 @@ export default function PropertyCapture() {
         >
           {uploading ? (
             <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin">⏳</span> Uploading...
+              <span className="animate-spin">⏳</span>
+              {uploadProgress ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...` : "Uploading..."}
             </span>
           ) : (
             "📸 Take Photo"
@@ -219,20 +302,19 @@ export default function PropertyCapture() {
 
         {sectionPhotos.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {sectionPhotos.map((photo) => (
-              <a
+            {sectionPhotos.map((photo, idx) => (
+              <button
                 key={photo._id}
-                href={photo.publicUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                type="button"
                 className="relative shrink-0"
+                onClick={() => openViewerAt(idx)}
               >
                 <img
                   src={photo.publicUrl}
                   alt="section photo"
-                  className="w-20 h-20 object-cover rounded-xl border-2 border-white shadow-sm"
+                  className="w-20 h-20 object-cover rounded-xl border-2 border-white shadow-sm hover:border-sky-300 transition-colors cursor-zoom-in"
                 />
-              </a>
+              </button>
             ))}
           </div>
         )}
@@ -245,6 +327,12 @@ export default function PropertyCapture() {
             rows={5}
             className="w-full text-sm px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-sky-400 resize-none transition-colors"
           />
+          <div className="mt-2 text-xs text-gray-500 min-h-[1rem]">
+            {noteSaveState === "saving" && "Saving notes..."}
+            {noteSaveState === "saved" &&
+              `Saved${lastSavedAt ? ` at ${new Date(lastSavedAt).toLocaleTimeString()}` : ""}`}
+            {noteSaveState === "error" && "Autosave failed. Your notes will still save on Next House."}
+          </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button
               type="button"
@@ -289,6 +377,54 @@ export default function PropertyCapture() {
               : "Complete Street 🎉"}
         </button>
       </div>
+
+      {viewerOpen && selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setViewerOpen(false)}
+        >
+          <div
+            className="w-full max-w-4xl bg-black/40 rounded-2xl border border-white/20 p-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between text-white text-sm mb-2">
+              <p className="font-semibold capitalize">
+                {currentSection} photo {selectedPhotoIndex + 1} / {sectionPhotos.length}
+              </p>
+              <button
+                type="button"
+                className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                onClick={() => setViewerOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="relative">
+              <img
+                src={selectedPhoto.publicUrl}
+                alt="full size section photo"
+                className="w-full max-h-[75vh] object-contain rounded-xl bg-black"
+              />
+              <button
+                type="button"
+                disabled={!canGoPrev}
+                className="absolute left-2 top-1/2 -translate-y-1/2 px-3 py-2 rounded-lg bg-black/50 text-white disabled:opacity-30"
+                onClick={() => canGoPrev && setSelectedPhotoIndex((i) => i - 1)}
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                disabled={!canGoNext}
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-2 rounded-lg bg-black/50 text-white disabled:opacity-30"
+                onClick={() => canGoNext && setSelectedPhotoIndex((i) => i + 1)}
+              >
+                →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

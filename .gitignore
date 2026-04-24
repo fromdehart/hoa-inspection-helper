@@ -26,6 +26,9 @@ dist-ssr
 *.sw?
 .vercel
 
+# Local inspector uploads (served in dev; do not commit)
+uploads/
+
 # Personal configuration (gitignored for security)
 .config/
 
