@@ -5,7 +5,11 @@ import { ChevronDown } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { uploadPhoto } from "@/lib/uploadClient";
+import { runPool } from "@/lib/runPool";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
+/** Max parallel uploads per batch (mobile uplink is usually the bottleneck; 4 is a good balance). */
+const UPLOAD_CONCURRENCY = 4;
 
 /** Single bucket for new uploads; legacy side/back photos still list with property photos. */
 const UPLOAD_SECTION = "front" as const;
@@ -47,7 +51,11 @@ export default function PropertyCapture() {
   const pid = propertyId as Id<"properties">;
 
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    done: number;
+    fail: number;
+    total: number;
+  } | null>(null);
   const [note, setNote] = useState("");
   const [listening, setListening] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
@@ -145,39 +153,49 @@ export default function PropertyCapture() {
   const currentIdx = walkList.findIndex((p) => p._id === pid);
   const nextProperty = currentIdx >= 0 ? walkList[currentIdx + 1] : undefined;
 
-  const handlePhotoSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
-    if (files.length === 0) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (files.length === 0 || !propertyId) return;
+
     setUploading(true);
-    setUploadProgress({ current: 0, total: files.length });
-    let failed = 0;
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        setUploadProgress({ current: i + 1, total: files.length });
-        try {
-          const result = await uploadPhoto(file, propertyId!, UPLOAD_SECTION);
-          await createPhoto({
-            propertyId: pid,
-            section: UPLOAD_SECTION,
-            filePath: result.filePath,
-            publicUrl: result.publicUrl,
-          });
-        } catch (err) {
-          failed++;
-          console.error("Photo upload failed:", err);
+    setUploadProgress({ done: 0, fail: 0, total: files.length });
+
+    void (async () => {
+      let done = 0;
+      let fail = 0;
+      const bump = () => {
+        setUploadProgress({ done, fail, total: files.length });
+      };
+
+      try {
+        await runPool(files, UPLOAD_CONCURRENCY, async (file) => {
+          try {
+            const result = await uploadPhoto(file, propertyId, UPLOAD_SECTION);
+            await createPhoto({
+              propertyId: pid,
+              section: UPLOAD_SECTION,
+              filePath: result.filePath,
+              publicUrl: result.publicUrl,
+            });
+            done++;
+          } catch (err) {
+            fail++;
+            console.error("Photo upload failed:", err);
+          }
+          bump();
+        });
+
+        if (fail > 0) {
+          alert(
+            `Finished ${files.length} uploads: ${done} saved, ${fail} failed — please retry the failed ones.`,
+          );
         }
+      } finally {
+        setUploading(false);
+        setUploadProgress(null);
       }
-      if (failed > 0) {
-        alert(
-          `Uploaded ${files.length - failed}/${files.length} photos. ${failed} failed — please retry those.`,
-        );
-      }
-    } finally {
-      setUploading(false);
-      setUploadProgress(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+    })();
   };
 
   const openViewerAt = (index: number) => {
@@ -404,9 +422,19 @@ export default function PropertyCapture() {
           onClick={() => fileInputRef.current?.click()}
         >
           {uploading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin">⏳</span>
-              {uploadProgress ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...` : "Uploading..."}
+            <span className="flex flex-col items-center justify-center gap-0.5 sm:flex-row sm:gap-2">
+              <span className="flex items-center gap-2">
+                <span className="animate-spin">⏳</span>
+                {uploadProgress ? (
+                  <span>
+                    Uploading {uploadProgress.done + uploadProgress.fail}/{uploadProgress.total}
+                    {uploadProgress.fail > 0 ? ` (${uploadProgress.fail} failed)` : ""}
+                  </span>
+                ) : (
+                  <span>Uploading…</span>
+                )}
+              </span>
+              <span className="text-xs font-normal opacity-90">Up to {UPLOAD_CONCURRENCY} at a time</span>
             </span>
           ) : (
             "📸 Take Photo"
