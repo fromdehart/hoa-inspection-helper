@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
-import { getUserRole } from "@/lib/auth";
+import { getUserRole, hasRole } from "@/lib/auth";
+import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
 
 export default function AdminGate() {
@@ -10,6 +11,7 @@ export default function AdminGate() {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const role = getUserRole(user);
+  const isAdmin = hasRole(user, "admin");
 
   useEffect(() => {
     const metaKey = JSON.stringify(user?.publicMetadata ?? {});
@@ -27,15 +29,14 @@ export default function AdminGate() {
   }, [isLoaded, isSignedIn, role, user, location.pathname]);
 
   useEffect(() => {
-    if (isLoaded && isSignedIn && role === "admin") {
-      authLog("AdminGate", "redirect_dashboard", { to: "/admin/dashboard" });
-      navigate("/admin/dashboard", { replace: true });
-    }
-  }, [isLoaded, isSignedIn, role, navigate]);
+    if (!isLoaded || !isSignedIn || !hasRole(user, "admin")) return;
+    authLog("AdminGate", "redirect_dashboard", { to: "/admin/dashboard" });
+    navigate("/admin/dashboard", { replace: true });
+  }, [isLoaded, isSignedIn, user, navigate]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
-    if (role === "admin") return;
+    if (hasRole(user, "admin")) return;
     authLog("AdminGate", "blocked_not_admin", {
       path: location.pathname,
       primaryRole: role,
@@ -49,10 +50,11 @@ export default function AdminGate() {
   }
 
   if (!isSignedIn) {
+    persistSignInReturnPath(location.pathname);
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
   }
 
-  if (role !== "admin") {
+  if (!isAdmin) {
     return (
       <div className="min-h-screen gradient-hero flex items-center justify-center px-6">
         <div className="w-full max-w-sm">

@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { ONE_SHOT_VERSION } from "@/version";
+import { clearSignInReturnPath } from "@/lib/postSignInRedirect";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -22,7 +23,10 @@ export default function Landing() {
         <button
           type="button"
           className="btn-bounce w-full gradient-admin rounded-2xl p-5 text-left shadow-xl border border-white/20 group"
-          onClick={() => navigate("/admin")}
+          onClick={() => {
+            clearSignInReturnPath();
+            navigate("/admin");
+          }}
         >
           <div className="flex items-center gap-4">
             <span className="text-4xl">👔</span>
@@ -37,7 +41,10 @@ export default function Landing() {
         <button
           type="button"
           className="btn-bounce w-full gradient-inspector rounded-2xl p-5 text-left shadow-xl border border-white/20 group"
-          onClick={() => navigate("/inspector")}
+          onClick={() => {
+            clearSignInReturnPath();
+            navigate("/inspector");
+          }}
         >
           <div className="flex items-center gap-4">
             <span className="text-4xl">🚶</span>

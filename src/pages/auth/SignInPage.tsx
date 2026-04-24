@@ -1,17 +1,19 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { SignIn, useAuth, useUser } from "@clerk/clerk-react";
 import { Navigate, useLocation } from "react-router-dom";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
-import { resolvePostSignInRedirect } from "@/lib/postSignInRedirect";
+import {
+  clearSignInReturnPath,
+  resolvePostSignInRedirect,
+} from "@/lib/postSignInRedirect";
 
 export default function SignInPage() {
   const location = useLocation();
   const { isLoaded, isSignedIn, userId } = useAuth();
   const { user } = useUser();
-  const afterSignInPath = useMemo(
-    () => resolvePostSignInRedirect(location.state),
-    [location.state],
-  );
+  // Re-resolve each render: Clerk MFA moves between /sign-in/* URLs and drops router state;
+  // sessionStorage keeps the path from the Admin / Inspector button the user chose.
+  const afterSignInPath = resolvePostSignInRedirect(location.state);
   const afterSignInAbsolute =
     typeof window !== "undefined" ? `${window.location.origin}${afterSignInPath}` : afterSignInPath;
 
@@ -27,6 +29,10 @@ export default function SignInPage() {
       user: authUserSnapshot(user),
     });
   }, [isLoaded, isSignedIn, userId, user]);
+
+  useEffect(() => {
+    if (isSignedIn) clearSignInReturnPath();
+  }, [isSignedIn]);
 
   if (!isLoaded) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;

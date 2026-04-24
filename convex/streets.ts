@@ -13,7 +13,8 @@ export const list = query({
           .collect();
         const total = properties.length;
         const complete = properties.filter((p) => p.status === "complete").length;
-        return { _id: street._id, name: street.name, total, complete };
+        const inProgress = properties.filter((p) => p.status === "inProgress").length;
+        return { _id: street._id, name: street.name, total, complete, inProgress };
       }),
     );
     return result.sort((a, b) => a.name.localeCompare(b.name));

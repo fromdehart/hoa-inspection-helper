@@ -28,27 +28,27 @@ export default function PropertyList() {
   const hasNotStarted = (data?.properties ?? []).some((p) => p.status === "notStarted");
 
   return (
-    <div className="min-h-screen bg-[#f8f7ff] pb-24">
-      <div className="gradient-inspector px-4 pt-8 pb-5">
-        <div className="flex items-center justify-between mb-2">
+    <div className="flex min-h-screen flex-col bg-[#f8f7ff] pb-24">
+      <div className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 px-4 pt-8 pb-5 shadow-md">
+        <div className="relative z-[1] flex items-center justify-between gap-2 mb-2">
           <button
             type="button"
-            className="text-sky-100 hover:text-white text-sm font-medium transition-colors"
+            className="shrink-0 text-sky-100 hover:text-white text-sm font-medium transition-colors"
             onClick={() => navigate("/inspector/streets")}
           >
             ← Streets
           </button>
-          <h1 className="font-extrabold text-white text-lg truncate max-w-[55%] text-center">
+          <h1 className="min-w-0 flex-1 font-extrabold text-white text-lg truncate text-center px-1">
             {data?.street.name ?? "Loading…"}
           </h1>
-          <div className="w-16" />
+          <div className="w-16 shrink-0" aria-hidden />
         </div>
         <p className="text-sky-200 text-xs text-center">
           Walk order: Odd side (ascending) then Even side (descending)
         </p>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 py-4 space-y-2">
+      <div className="relative z-0 max-w-lg mx-auto w-full flex-1 px-4 py-4 space-y-2">
         {data === undefined && (
           <div className="text-center py-12">
             <div className="text-4xl mb-2 animate-spin">🔄</div>
@@ -78,7 +78,7 @@ export default function PropertyList() {
       </div>
 
       {hasNotStarted && (
-        <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/90 backdrop-blur border-t border-gray-100">
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 backdrop-blur border-t border-gray-100">
           <button
             type="button"
             className="btn-bounce w-full py-4 rounded-2xl font-bold text-lg gradient-success text-white shadow-lg"

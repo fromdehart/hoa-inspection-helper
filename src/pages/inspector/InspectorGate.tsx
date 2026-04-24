@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { hasRole } from "@/lib/auth";
+import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
 
 export default function InspectorGate() {
@@ -46,6 +47,7 @@ export default function InspectorGate() {
   }
 
   if (!isSignedIn) {
+    persistSignInReturnPath(location.pathname);
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
   }
 

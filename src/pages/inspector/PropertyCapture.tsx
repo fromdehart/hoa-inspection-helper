@@ -1,24 +1,51 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
+import { ChevronDown } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { uploadPhoto } from "@/lib/uploadClient";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-type Section = "front" | "side" | "back";
+/** Single bucket for new uploads; legacy side/back photos still list with property photos. */
+const UPLOAD_SECTION = "front" as const;
 
-const SECTION_EMOJI: Record<Section, string> = {
-  front: "🏠",
-  side: "🏡",
-  back: "🌳",
+type PropertyStatus = "notStarted" | "inProgress" | "complete";
+
+/** Dot on header trigger + small swatch in menu rows. */
+const STATUS_DOT: Record<PropertyStatus, string> = {
+  notStarted: "bg-slate-300 shadow-inner ring-1 ring-slate-500/35",
+  /** Amber reads clearly on the cyan inspector header (avoids blue-on-blue). */
+  inProgress: "bg-amber-300 shadow-inner ring-1 ring-amber-600/40",
+  complete: "bg-emerald-400 shadow-inner ring-1 ring-emerald-700/35",
 };
+
+/** Dropdown row backgrounds (warm middle step matches yellow/amber, not sky blue). */
+const STATUS_THEME: Record<PropertyStatus, { full: string; menuBtn: string }> = {
+  notStarted: {
+    full: "Not started",
+    menuBtn:
+      "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold bg-slate-100 text-slate-900 hover:bg-slate-200/90 active:bg-slate-200 transition-colors",
+  },
+  inProgress: {
+    full: "In progress",
+    menuBtn:
+      "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold bg-amber-100 text-amber-950 hover:bg-amber-200/90 active:bg-amber-200 transition-colors",
+  },
+  complete: {
+    full: "Complete",
+    menuBtn:
+      "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold bg-emerald-100 text-emerald-950 hover:bg-emerald-200/90 active:bg-emerald-200 transition-colors",
+  },
+};
+
+const STATUS_ORDER: PropertyStatus[] = ["notStarted", "inProgress", "complete"];
 
 export default function PropertyCapture() {
   const navigate = useNavigate();
   const { propertyId } = useParams<{ propertyId: string }>();
   const pid = propertyId as Id<"properties">;
 
-  const [currentSection, setCurrentSection] = useState<Section>("front");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number } | null>(null);
   const [note, setNote] = useState("");
@@ -28,6 +55,9 @@ export default function PropertyCapture() {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false);
+  const [nextHouseModalOpen, setNextHouseModalOpen] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const noteAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -45,6 +75,7 @@ export default function PropertyCapture() {
 
   const createPhoto = useMutation(api.photos.create);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
+  const updatePropertyStatus = useMutation(api.properties.updateStatus);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
 
   useEffect(() => {
@@ -97,7 +128,18 @@ export default function PropertyCapture() {
     }, 1200);
   }, [note, pid, updateInspectorNotes]);
 
-  const sectionPhotos = (photos ?? []).filter((p) => p.section === currentSection);
+  useEffect(() => {
+    if (!statusMenuOpen) return;
+    const close = (e: MouseEvent) => {
+      if (statusMenuRef.current && !statusMenuRef.current.contains(e.target as Node)) {
+        setStatusMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [statusMenuOpen]);
+
+  const propertyPhotos = photos ?? [];
 
   const walkList = streetData?.properties ?? [];
   const currentIdx = walkList.findIndex((p) => p._id === pid);
@@ -114,10 +156,10 @@ export default function PropertyCapture() {
         const file = files[i];
         setUploadProgress({ current: i + 1, total: files.length });
         try {
-          const result = await uploadPhoto(file, propertyId!, currentSection);
+          const result = await uploadPhoto(file, propertyId!, UPLOAD_SECTION);
           await createPhoto({
             propertyId: pid,
-            section: currentSection,
+            section: UPLOAD_SECTION,
             filePath: result.filePath,
             publicUrl: result.publicUrl,
           });
@@ -143,9 +185,9 @@ export default function PropertyCapture() {
     setViewerOpen(true);
   };
 
-  const selectedPhoto = sectionPhotos[selectedPhotoIndex];
+  const selectedPhoto = propertyPhotos[selectedPhotoIndex];
   const canGoPrev = selectedPhotoIndex > 0;
-  const canGoNext = selectedPhotoIndex < sectionPhotos.length - 1;
+  const canGoNext = selectedPhotoIndex < propertyPhotos.length - 1;
 
   const stopBrowserSpeech = () => {
     try {
@@ -188,17 +230,50 @@ export default function PropertyCapture() {
     recognition.start();
   };
 
-  const handleNextHouse = async () => {
+  const persistNotesIfDirty = async () => {
     stopBrowserSpeech();
-    if (noteAutosaveTimerRef.current) clearTimeout(noteAutosaveTimerRef.current);
+    if (noteAutosaveTimerRef.current) {
+      clearTimeout(noteAutosaveTimerRef.current);
+      noteAutosaveTimerRef.current = null;
+    }
+    if (note !== lastPersistedNoteRef.current) {
+      await updateInspectorNotes({ id: pid, inspectorNotes: note });
+      lastPersistedNoteRef.current = note;
+    }
+  };
+
+  const streetIdForNav = property?.streetId;
+
+  const navigateAfterLeave = () => {
+    if (nextProperty) {
+      navigate(`/inspector/property/${nextProperty._id}`);
+    } else if (streetIdForNav) {
+      navigate(`/inspector/street/${streetIdForNav}`);
+    }
+  };
+
+  const handleNextHouseFinished = async () => {
     setNextLoading(true);
+    setNextHouseModalOpen(false);
     try {
+      await persistNotesIfDirty();
       await completeHouse({ id: pid, inspectorNotes: note });
-      if (nextProperty) {
-        navigate(`/inspector/property/${nextProperty._id}`);
-      } else {
-        navigate(`/inspector/street/${property?.streetId}`);
-      }
+      navigateAfterLeave();
+    } catch (err) {
+      console.error(err);
+      alert("Could not save and continue: " + String(err));
+    } finally {
+      setNextLoading(false);
+    }
+  };
+
+  const handleNextHouseMoreTodo = async () => {
+    setNextLoading(true);
+    setNextHouseModalOpen(false);
+    try {
+      await persistNotesIfDirty();
+      await updatePropertyStatus({ id: pid, status: "inProgress" });
+      navigateAfterLeave();
     } catch (err) {
       console.error(err);
       alert("Could not save and continue: " + String(err));
@@ -239,38 +314,76 @@ export default function PropertyCapture() {
 
   return (
     <div className="min-h-screen bg-[#f8f7ff] pb-24 flex flex-col">
-      <div className="gradient-inspector px-4 pt-8 pb-4">
-        <div className="flex items-center justify-between mb-3">
-          <button
-            type="button"
-            className="text-sky-100 hover:text-white text-sm font-medium transition-colors"
-            onClick={() => navigate(`/inspector/street/${property.streetId}`)}
-          >
-            ← Street
-          </button>
-          <h1 className="font-bold text-white text-sm truncate max-w-[200px]">{property.address}</h1>
-          <div className="w-12" />
-        </div>
-
-        <div className="flex gap-2">
-          {(["front", "side", "back"] as Section[]).map((sec) => (
-            <button
-              key={sec}
-              type="button"
-              className={`btn-bounce flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
-                currentSection === sec
-                  ? "bg-white text-sky-700 shadow-sm"
-                  : "bg-white/20 text-white/80 hover:bg-white/30"
-              }`}
-              onClick={() => setCurrentSection(sec)}
-            >
-              {SECTION_EMOJI[sec]} {sec.charAt(0).toUpperCase() + sec.slice(1)}
-            </button>
-          ))}
+      <div className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 shadow-md">
+        <div className="px-4 pt-8 pb-4">
+          <div className="relative" ref={statusMenuRef}>
+            <div className="flex items-center gap-2 pb-1">
+              <button
+                type="button"
+                className="relative z-[1] shrink-0 text-sky-100 hover:text-white text-sm font-medium transition-colors"
+                onClick={() => navigate(`/inspector/street/${property.streetId}`)}
+              >
+                ← Street
+              </button>
+              <h1 className="relative z-[1] min-w-0 flex-1 font-bold text-white text-sm text-center truncate px-1">
+                {property.address}
+              </h1>
+              <button
+                type="button"
+                className="relative z-[1] flex shrink-0 items-center gap-1 rounded-full border border-white/30 bg-white/15 py-1.5 pl-1.5 pr-1 hover:bg-white/25 transition-colors"
+                aria-expanded={statusMenuOpen}
+                aria-haspopup="listbox"
+                aria-label={`House status: ${STATUS_THEME[property.status].full}. Tap to change.`}
+                onClick={() => setStatusMenuOpen((o) => !o)}
+              >
+                <span
+                  className={`h-3.5 w-3.5 shrink-0 rounded-full ${STATUS_DOT[property.status]}`}
+                  aria-hidden
+                />
+                <ChevronDown
+                  className={`h-3.5 w-3.5 shrink-0 text-white/90 transition-transform ${statusMenuOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+            </div>
+            {statusMenuOpen ? (
+              <ul
+                className="absolute left-0 right-0 top-full z-[60] mt-1.5 space-y-2 rounded-xl border border-white/50 bg-white/98 p-2 shadow-xl backdrop-blur-md sm:left-auto sm:right-0 sm:mt-2 sm:min-w-[12.5rem] sm:w-max sm:max-w-[min(12.5rem,calc(100vw-2rem))]"
+                role="listbox"
+                aria-label="House status"
+              >
+                {STATUS_ORDER.map((value) => (
+                  <li key={value}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={property.status === value}
+                      className={`${STATUS_THEME[value].menuBtn} ${property.status === value ? "ring-2 ring-gray-900/20 ring-offset-2 ring-offset-white" : ""}`}
+                      onClick={async () => {
+                        if (property.status === value) {
+                          setStatusMenuOpen(false);
+                          return;
+                        }
+                        try {
+                          await updatePropertyStatus({ id: pid, status: value });
+                          setStatusMenuOpen(false);
+                        } catch (err) {
+                          console.error(err);
+                          alert("Could not update status.");
+                        }
+                      }}
+                    >
+                      <span className={`h-3 w-3 shrink-0 rounded-full ${STATUS_DOT[value]}`} aria-hidden />
+                      <span>{STATUS_THEME[value].full}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="relative z-0 flex-1 overflow-y-auto px-4 py-4 space-y-4">
         <input
           ref={fileInputRef}
           type="file"
@@ -300,9 +413,9 @@ export default function PropertyCapture() {
           )}
         </button>
 
-        {sectionPhotos.length > 0 && (
+        {propertyPhotos.length > 0 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
-            {sectionPhotos.map((photo, idx) => (
+            {propertyPhotos.map((photo, idx) => (
               <button
                 key={photo._id}
                 type="button"
@@ -325,7 +438,7 @@ export default function PropertyCapture() {
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={5}
-            className="w-full text-sm px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-sky-400 resize-none transition-colors"
+            className="w-full text-base px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-sky-400 resize-none transition-colors"
           />
           <div className="mt-2 text-xs text-gray-500 min-h-[1rem]">
             {noteSaveState === "saving" && "Saving notes..."}
@@ -363,20 +476,60 @@ export default function PropertyCapture() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 p-3 bg-white/90 backdrop-blur border-t border-gray-100">
-        <button
-          type="button"
-          className="btn-bounce w-full py-4 rounded-2xl font-bold text-lg gradient-success text-white shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
-          disabled={nextLoading}
-          onClick={handleNextHouse}
-        >
-          {nextLoading
-            ? "Saving…"
-            : nextProperty
-              ? "Next House → 🏠"
-              : "Complete Street 🎉"}
-        </button>
+      <div className="fixed bottom-0 left-0 right-0 z-40 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-white/95 backdrop-blur border-t border-gray-100">
+        <div className="max-w-lg mx-auto">
+          <button
+            type="button"
+            className="btn-bounce w-full py-3.5 px-3 rounded-2xl font-bold text-base sm:text-lg gradient-success text-white shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+            disabled={nextLoading}
+            onClick={() => setNextHouseModalOpen(true)}
+          >
+            {nextLoading
+              ? "Saving…"
+              : nextProperty
+                ? "Next House → 🏠"
+                : "Complete Street 🎉"}
+          </button>
+        </div>
       </div>
+
+      <Dialog open={nextHouseModalOpen} onOpenChange={setNextHouseModalOpen}>
+        <DialogContent className="max-w-[min(92vw,22rem)] gap-3 border-gray-200 p-5 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Leaving this house?</DialogTitle>
+            <DialogDescription className="text-left text-sm text-muted-foreground">
+              Is this inspection finished here, or do you still have more to do on this home? Your notes will be
+              saved either way.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-2 pt-1">
+            <button
+              type="button"
+              className="btn-bounce w-full rounded-xl bg-emerald-500 py-3.5 text-base font-bold text-white shadow-md hover:bg-emerald-600 disabled:opacity-50"
+              disabled={nextLoading}
+              onClick={() => void handleNextHouseFinished()}
+            >
+              All done — mark complete
+            </button>
+            <button
+              type="button"
+              className="btn-bounce w-full rounded-xl border-2 border-sky-300 bg-sky-50 py-3.5 text-base font-bold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+              disabled={nextLoading}
+              onClick={() => void handleNextHouseMoreTodo()}
+            >
+              More to do — save & continue
+            </button>
+            <button
+              type="button"
+              className="text-sm font-medium text-gray-500 hover:text-gray-800 py-1"
+              disabled={nextLoading}
+              onClick={() => setNextHouseModalOpen(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {viewerOpen && selectedPhoto && (
         <div
@@ -388,8 +541,8 @@ export default function PropertyCapture() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between text-white text-sm mb-2">
-              <p className="font-semibold capitalize">
-                {currentSection} photo {selectedPhotoIndex + 1} / {sectionPhotos.length}
+              <p className="font-semibold">
+                Photo {selectedPhotoIndex + 1} / {propertyPhotos.length}
               </p>
               <button
                 type="button"

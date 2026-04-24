@@ -22,6 +22,7 @@ export function getUserRoles(user: MetadataCarrier | null | undefined): AppRole[
   return Array.from(out);
 }
 
+/** First role in metadata order — do not use for access checks when users may have multiple roles; use {@link hasRole} or {@link getUserRoles}. */
 export function getUserRole(user: MetadataCarrier | null | undefined): AppRole | null {
   return getUserRoles(user)[0] ?? null;
 }

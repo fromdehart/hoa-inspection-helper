@@ -2,8 +2,10 @@ import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { useClerk, useUser } from "@clerk/clerk-react";
+import { Menu } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { hasRole } from "@/lib/auth";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import JSZip from "jszip";
 
 type StatusFilter = "all" | "notStarted" | "inProgress" | "complete";
@@ -58,6 +60,7 @@ export default function Dashboard() {
   const [photoExporting, setPhotoExporting] = useState(false);
   const [photoExportLog, setPhotoExportLog] = useState("");
   const [toast, setToast] = useState("");
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const properties = useQuery(api.properties.list, {
@@ -190,52 +193,128 @@ export default function Dashboard() {
   const totalAll = (properties ?? []).length;
 
   return (
-    <div className="min-h-screen bg-[#f8f7ff]">
-      <div className="gradient-admin px-4 pt-10 pb-6">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
+    <div className="flex min-h-screen flex-col bg-[#f8f7ff]">
+      <div className="gradient-admin sticky top-0 z-50 shrink-0 border-b border-white/10 px-4 pt-10 pb-6 shadow-md">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 pr-1">
             <p className="text-purple-200 text-sm font-medium uppercase tracking-widest">Admin</p>
             <h1 className="text-white font-extrabold text-2xl">HOA Dashboard 📋</h1>
           </div>
-          <div className="flex gap-2 flex-wrap justify-end">
-            <button
-              type="button"
-              className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-              onClick={() => navigate("/admin/settings")}
-            >
-              ⚙️ Settings
-            </button>
-            <button
-              type="button"
-              className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-              onClick={() => navigate("/admin/letter-export")}
-            >
-              📄 Export PDFs
-            </button>
-            <button
-              type="button"
-              disabled={photoExporting || !photoExportRows}
-              className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors disabled:opacity-50"
-              onClick={() => void handlePhotoExport()}
-            >
-              {photoExporting ? "📸 Exporting Photos…" : "📸 Export Photos ZIP"}
-            </button>
-            {canInspect && (
+          <div className="relative z-[1] flex shrink-0 items-center gap-2">
+            <Sheet open={adminMenuOpen} onOpenChange={setAdminMenuOpen}>
+              <SheetTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/35 bg-white/15 text-white hover:bg-white/25 transition-colors md:hidden"
+                  aria-label="Open menu"
+                >
+                  <Menu className="h-5 w-5" strokeWidth={2.25} />
+                </button>
+              </SheetTrigger>
+              <SheetContent
+                side="right"
+                className="z-[100] w-[min(100vw-1rem,20rem)] border-l border-gray-200 bg-white sm:max-w-sm"
+              >
+                <SheetHeader>
+                  <SheetTitle className="text-left text-gray-900">Menu</SheetTitle>
+                </SheetHeader>
+                <nav className="mt-6 flex flex-col gap-2" aria-label="Dashboard actions">
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      navigate("/admin/settings");
+                    }}
+                  >
+                    ⚙️ Settings
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      navigate("/admin/letter-export");
+                    }}
+                  >
+                    📄 Export PDFs
+                  </button>
+                  <button
+                    type="button"
+                    disabled={photoExporting || !photoExportRows}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      void handlePhotoExport();
+                    }}
+                  >
+                    {photoExporting ? "📸 Exporting Photos…" : "📸 Export Photos ZIP"}
+                  </button>
+                  {canInspect && (
+                    <button
+                      type="button"
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
+                      onClick={() => {
+                        setAdminMenuOpen(false);
+                        navigate("/inspector/streets");
+                      }}
+                    >
+                      🚶 Inspector Mode
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      void signOut({ redirectUrl: "/" });
+                    }}
+                  >
+                    Logout
+                  </button>
+                </nav>
+              </SheetContent>
+            </Sheet>
+            <div className="hidden md:flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-                onClick={() => navigate("/inspector/streets")}
+                onClick={() => navigate("/admin/settings")}
               >
-                🚶 Inspector Mode
+                ⚙️ Settings
               </button>
-            )}
-            <button
-              type="button"
-              className="text-sm bg-white/10 hover:bg-white/20 text-white/70 px-3 py-1.5 rounded-full border border-white/20 transition-colors"
-              onClick={() => void signOut({ redirectUrl: "/" })}
-            >
-              Logout
-            </button>
+              <button
+                type="button"
+                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+                onClick={() => navigate("/admin/letter-export")}
+              >
+                📄 Export PDFs
+              </button>
+              <button
+                type="button"
+                disabled={photoExporting || !photoExportRows}
+                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors disabled:opacity-50"
+                onClick={() => void handlePhotoExport()}
+              >
+                {photoExporting ? "📸 Exporting Photos…" : "📸 Export Photos ZIP"}
+              </button>
+              {canInspect && (
+                <button
+                  type="button"
+                  className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+                  onClick={() => navigate("/inspector/streets")}
+                >
+                  🚶 Inspector Mode
+                </button>
+              )}
+              <button
+                type="button"
+                className="text-sm bg-white/10 hover:bg-white/20 text-white/70 px-3 py-1.5 rounded-full border border-white/20 transition-colors"
+                onClick={() => void signOut({ redirectUrl: "/" })}
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
         {totalAll > 0 && (
@@ -256,7 +335,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 py-5">
+      <div className="relative z-0 max-w-5xl mx-auto w-full flex-1 px-4 py-5">
         {toast && (
           <div className="mb-4 p-3 bg-green-50 text-green-800 rounded-xl border border-green-200 text-sm font-medium">
             {toast}

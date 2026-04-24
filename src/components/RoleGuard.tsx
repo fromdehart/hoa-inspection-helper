@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useMemo } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { AppRole, getUserRoles } from "@/lib/auth";
+import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
 
 type RoleGuardProps = {
@@ -50,6 +51,7 @@ export default function RoleGuard({ allow, children }: RoleGuardProps) {
   }
 
   if (!isSignedIn) {
+    persistSignInReturnPath(location.pathname);
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
   }
 
