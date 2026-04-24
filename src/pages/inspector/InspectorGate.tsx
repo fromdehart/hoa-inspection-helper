@@ -75,8 +75,8 @@ export default function InspectorGate() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-6xl mb-3">🚶</div>
-          <h1 className="text-3xl font-extrabold text-white">Inspector Login</h1>
-          <p className="text-sky-200 mt-1">Redirecting to streets...</p>
+          <h1 className="text-3xl font-extrabold text-white">Inspector</h1>
+          <p className="text-sky-200 mt-1">Redirecting to streets…</p>
         </div>
 
         <button

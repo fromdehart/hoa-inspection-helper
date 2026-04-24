@@ -1,0 +1,22 @@
+# Copy to .github/workflows/vercel-production.yml and commit from a Git client
+# whose token has the "workflow" scope (GitHub OAuth apps used by some IDEs do not).
+# Repo secret: VERCEL_TOKEN from https://vercel.com/account/tokens
+name: Deploy to Vercel Production
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: team_ptsZF7v5fuiMKQ3ES6vdrabj
+          VERCEL_PROJECT_ID: prj_XxpVkQMG5EOy9zEE13s4Wh8KhheE
