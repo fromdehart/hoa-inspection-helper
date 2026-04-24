@@ -1,5 +1,4 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 export const listByProperty = query({
@@ -34,9 +33,9 @@ export const create = mutation({
       filePath: args.filePath,
       publicUrl: args.publicUrl,
       uploadedAt: Date.now(),
-      verificationStatus: "pending",
+      verificationStatus: "needsReview",
+      verificationNote: "Awaiting manual review (automated image verification disabled).",
     });
-    await ctx.scheduler.runAfter(0, internal.ai.verifyFix, { fixPhotoId });
     return fixPhotoId;
   },
 });
@@ -55,6 +54,27 @@ export const updateVerification = internalMutation({
     await ctx.db.patch(args.id, {
       verificationStatus: args.status,
       verificationNote: args.note,
+    });
+    return null;
+  },
+});
+
+/** Admin / manual review of homeowner fix photos (image AI disabled). */
+export const setVerification = mutation({
+  args: {
+    id: v.id("fixPhotos"),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("resolved"),
+      v.literal("notResolved"),
+      v.literal("needsReview"),
+    ),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      verificationStatus: args.status,
+      verificationNote: args.note ?? "",
     });
     return null;
   },

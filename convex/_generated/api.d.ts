@@ -13,10 +13,10 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
-import type * as ai from "../ai.js";
 import type * as aiConfig from "../aiConfig.js";
 import type * as fixPhotos from "../fixPhotos.js";
 import type * as http from "../http.js";
+import type * as letterBody from "../letterBody.js";
 import type * as letters from "../letters.js";
 import type * as openai from "../openai.js";
 import type * as photos from "../photos.js";
@@ -35,10 +35,10 @@ import type * as violations from "../violations.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  ai: typeof ai;
   aiConfig: typeof aiConfig;
   fixPhotos: typeof fixPhotos;
   http: typeof http;
+  letterBody: typeof letterBody;
   letters: typeof letters;
   openai: typeof openai;
   photos: typeof photos;

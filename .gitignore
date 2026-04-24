@@ -28,3 +28,8 @@ dist-ssr
 
 # Personal configuration (gitignored for security)
 .config/
+
+# Sample / local HOA data (not committed)
+Summer 2025 Inspections.xlsx
+RTT HOA CC Individual Inspection Owner letter 2025 general.docx
+RTT HOA CC Individual Inspection Owner letter 2025 general.docx.pdf

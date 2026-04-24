@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
+import { ONE_SHOT_VERSION } from "@/version";
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -7,45 +7,79 @@ export default function Landing() {
   const isInspector = localStorage.getItem("hoa_inspector") === "true";
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-8 px-4">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold mb-2">HOA Inspection Helper</h1>
-        <p className="text-muted-foreground">Select your role to continue</p>
+    <div className="min-h-screen gradient-hero flex flex-col items-center justify-center px-6 py-12">
+      {/* Hero */}
+      <div className="text-center mb-10">
+        <div className="text-7xl mb-4 animate-bounce">🏘️</div>
+        <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">
+          HOA Inspector
+        </h1>
+        <p className="text-blue-200 text-lg font-medium">
+          Making neighborhoods look good, one house at a time
+        </p>
       </div>
-      <div className="flex flex-col gap-4 w-full max-w-sm">
-        <Button size="lg" className="h-16 text-lg" onClick={() => navigate("/admin")}>
-          Admin Login
-        </Button>
-        <Button
-          size="lg"
-          variant="outline"
-          className="h-16 text-lg"
+
+      {/* Role cards */}
+      <div className="w-full max-w-sm flex flex-col gap-4">
+        <button
+          type="button"
+          className="btn-bounce w-full gradient-admin rounded-2xl p-5 text-left shadow-xl border border-white/20 group"
+          onClick={() => navigate("/admin")}
+        >
+          <div className="flex items-center gap-4">
+            <span className="text-4xl">👔</span>
+            <div>
+              <p className="text-white font-bold text-xl">Admin</p>
+              <p className="text-purple-200 text-sm">Dashboard, reports & settings</p>
+            </div>
+            <span className="ml-auto text-white/60 group-hover:translate-x-1 transition-transform text-xl">→</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="btn-bounce w-full gradient-inspector rounded-2xl p-5 text-left shadow-xl border border-white/20 group"
           onClick={() => navigate("/inspector")}
         >
-          Inspector Login
-        </Button>
+          <div className="flex items-center gap-4">
+            <span className="text-4xl">🚶</span>
+            <div>
+              <p className="text-white font-bold text-xl">Inspector</p>
+              <p className="text-sky-100 text-sm">Walk the streets, snap photos</p>
+            </div>
+            <span className="ml-auto text-white/60 group-hover:translate-x-1 transition-transform text-xl">→</span>
+          </div>
+        </button>
       </div>
+
+      {/* Quick access */}
       {(isAdmin || isInspector) && (
-        <div className="flex flex-col gap-2 text-center">
-          <p className="text-sm text-muted-foreground">Quick access</p>
-          {isAdmin && (
-            <button
-              className="text-blue-600 hover:underline text-sm"
-              onClick={() => navigate("/admin/dashboard")}
-            >
-              Admin Dashboard →
-            </button>
-          )}
-          {isInspector && (
-            <button
-              className="text-blue-600 hover:underline text-sm"
-              onClick={() => navigate("/inspector/streets")}
-            >
-              Inspector Streets →
-            </button>
-          )}
+        <div className="mt-8 bg-white/10 backdrop-blur rounded-2xl px-6 py-4 text-center border border-white/20">
+          <p className="text-white/60 text-xs uppercase tracking-widest font-semibold mb-3">Quick Access</p>
+          <div className="flex flex-col gap-2">
+            {isAdmin && (
+              <button
+                type="button"
+                className="text-yellow-300 hover:text-yellow-100 font-semibold text-sm transition-colors"
+                onClick={() => navigate("/admin/dashboard")}
+              >
+                Admin Dashboard →
+              </button>
+            )}
+            {isInspector && (
+              <button
+                type="button"
+                className="text-cyan-300 hover:text-cyan-100 font-semibold text-sm transition-colors"
+                onClick={() => navigate("/inspector/streets")}
+              >
+                Inspector Streets →
+              </button>
+            )}
+          </div>
         </div>
       )}
+
+      <p className="mt-10 text-white/20 text-xs">HOA Inspection Helper v{ONE_SHOT_VERSION}</p>
     </div>
   );
 }

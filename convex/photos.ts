@@ -1,5 +1,4 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 export const listByProperty = query({
@@ -34,13 +33,12 @@ export const create = mutation({
       filePath: args.filePath,
       publicUrl: args.publicUrl,
       uploadedAt: Date.now(),
-      analysisStatus: "pending",
+      analysisStatus: "done",
     });
     const property = await ctx.db.get(args.propertyId);
     if (property?.status === "notStarted") {
       await ctx.db.patch(args.propertyId, { status: "inProgress" });
     }
-    await ctx.scheduler.runAfter(0, internal.ai.analyzePhoto, { photoId });
     return photoId;
   },
 });

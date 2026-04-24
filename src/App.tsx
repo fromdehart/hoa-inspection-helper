@@ -6,6 +6,7 @@ import AdminGate from "./pages/admin/AdminGate";
 import Dashboard from "./pages/admin/Dashboard";
 import Settings from "./pages/admin/Settings";
 import PropertyReview from "./pages/admin/PropertyReview";
+import LetterExport from "./pages/admin/LetterExport";
 import InspectorGate from "./pages/inspector/InspectorGate";
 import StreetList from "./pages/inspector/StreetList";
 import PropertyList from "./pages/inspector/PropertyList";
@@ -22,6 +23,7 @@ const App = () => {
           <Route path="/admin/dashboard" element={<Dashboard />} />
           <Route path="/admin/settings" element={<Settings />} />
           <Route path="/admin/property/:propertyId" element={<PropertyReview />} />
+          <Route path="/admin/letter-export" element={<LetterExport />} />
           <Route path="/inspector" element={<InspectorGate />} />
           <Route path="/inspector/streets" element={<StreetList />} />
           <Route path="/inspector/street/:streetId" element={<PropertyList />} />

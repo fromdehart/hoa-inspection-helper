@@ -12,6 +12,8 @@ export default defineSchema({
     address: v.string(),
     houseNumber: v.number(),
     email: v.optional(v.string()),
+    /** "Completed work email from 2024 inspection?" column (often yes/no), not always a real address */
+    priorCompletedWorkResponse: v.optional(v.string()),
     status: v.union(
       v.literal("notStarted"),
       v.literal("inProgress"),
@@ -20,6 +22,17 @@ export default defineSchema({
     accessToken: v.string(),
     letterSentAt: v.optional(v.number()),
     createdAt: v.number(),
+    /** Summer 2025 spreadsheet import metadata (one-time community load) */
+    importSheetName: v.optional(v.string()),
+    importSourceRow: v.optional(v.number()),
+    previousCitations2024: v.optional(v.string()),
+    previousFrontObs: v.optional(v.string()),
+    previousBackObs: v.optional(v.string()),
+    previousInspectorComments: v.optional(v.string()),
+    previousInspectionSummary: v.optional(v.string()),
+    inspectorNotes: v.optional(v.string()),
+    generatedLetterHtml: v.optional(v.string()),
+    generatedLetterAt: v.optional(v.number()),
   })
     .index("by_street", ["streetId"])
     .index("by_token", ["accessToken"])

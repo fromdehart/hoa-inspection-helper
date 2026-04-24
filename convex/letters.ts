@@ -1,16 +1,55 @@
 import { action } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
+import {
+  buildLetterHtmlSync,
+  DEFAULT_LETTER_TEMPLATE,
+  escapeHtml,
+  paragraphsFromPlainText,
+} from "./letterBody";
 
-const FALLBACK_TEMPLATE = `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <h2>HOA Inspection Notice</h2>
-  <p>Date: {{date}}</p>
-  <p>Property: {{address}}</p>
-  <h3>Violations Found</h3>
-  {{violations}}
-  <p>Please submit proof of corrections at: {{portalLink}}</p>
-  <p>Thank you for your cooperation.</p>
-</div>`;
+async function polishLetterBody(rawText: string, mode: "violations" | "notes"): Promise<string> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key || !rawText.trim()) {
+    return mode === "violations"
+      ? rawText
+          .split("\n")
+          .filter(Boolean)
+          .map((line) => `<p>${escapeHtml(line)}</p>`)
+          .join("\n")
+      : paragraphsFromPlainText(rawText);
+  }
+  const instruction =
+    mode === "violations"
+      ? `Rewrite the following HOA violation list as formal, concise HTML paragraphs only (no outer wrapper). Use <p> tags. Content:\n${rawText}`
+      : `Rewrite the following inspector field notes as clear, professional HTML paragraphs only (no outer wrapper). Use <p> tags. Preserve all substantive observations:\n${rawText}`;
+  try {
+    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        messages: [{ role: "user", content: instruction }],
+        max_tokens: 900,
+      }),
+    });
+    const aiData = await aiResponse.json();
+    const aiText = aiData.choices?.[0]?.message?.content as string | undefined;
+    if (aiText?.trim()) return aiText.trim();
+  } catch (err) {
+    console.error("Letter polish error:", err);
+  }
+  return mode === "violations"
+    ? rawText
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => `<p>${escapeHtml(line)}</p>`)
+        .join("\n")
+    : paragraphsFromPlainText(rawText);
+}
 
 export const generate = action({
   args: { propertyId: v.id("properties") },
@@ -25,66 +64,39 @@ export const generate = action({
     });
     const openViolations = allViolations.filter((v) => v.status === "open");
 
-    if (openViolations.length === 0) {
-      return { html: "<p>No open violations found for this property.</p>" };
-    }
-
     const templateDoc = await ctx.runQuery(api.templates.get, { type: "letter" });
-    const templateContent = templateDoc?.content ?? FALLBACK_TEMPLATE;
+    const templateContent = templateDoc?.content ?? DEFAULT_LETTER_TEMPLATE;
 
     const violationListText = openViolations
-      .map((v, i) => `${i + 1}. [${v.severity?.toUpperCase() ?? "N/A"}] ${v.description}`)
+      .map((vi, i) => `${i + 1}. [${vi.severity?.toUpperCase() ?? "N/A"}] ${vi.description}`)
       .join("\n");
 
-    let formalViolations = violationListText;
-    try {
-      const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "gpt-4.1-mini",
-          messages: [
-            {
-              role: "user",
-              content: `Rewrite the following HOA violations as formal, concise paragraphs for an official letter. Use professional language. Violations:\n${violationListText}`,
-            },
-          ],
-          max_tokens: 800,
-        }),
-      });
-      const aiData = await aiResponse.json();
-      const aiText = aiData.choices?.[0]?.message?.content;
-      if (aiText) {
-        formalViolations = aiText
-          .split("\n\n")
-          .filter(Boolean)
-          .map((p: string) => `<p>${p}</p>`)
-          .join("\n");
-      }
-    } catch (err) {
-      console.error("Letter AI generation error:", err);
-      formalViolations = openViolations.map((v) => `<p>${v.description}</p>`).join("\n");
+    const notes = property.inspectorNotes ?? "";
+    let slotHtml: string;
+    if (openViolations.length > 0) {
+      slotHtml = await polishLetterBody(violationListText, "violations");
+    } else if (notes.trim()) {
+      slotHtml = await polishLetterBody(notes, "notes");
+    } else {
+      slotHtml = paragraphsFromPlainText("");
     }
 
-    const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? "http://localhost:5173";
-    const portalLink = `${PUBLIC_BASE_URL}/portal/${property.accessToken}`;
-    const dateStr = new Date().toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
+    const publicBase = process.env.PUBLIC_BASE_URL ?? "http://localhost:5173";
+    const html = buildLetterHtmlSync({
+      templateContent,
+      property: {
+        address: property.address,
+        accessToken: property.accessToken,
+        inspectorNotes: notes,
+        previousFrontObs: property.previousFrontObs,
+        previousBackObs: property.previousBackObs,
+        previousInspectorComments: property.previousInspectorComments,
+        previousInspectionSummary: property.previousInspectionSummary,
+        previousCitations2024: property.previousCitations2024,
+      },
+      publicBaseUrl: publicBase,
+      violationsOrFindingsHtml: slotHtml,
     });
-
-    const html = templateContent
-      .replace(/\{\{address\}\}/g, property.address)
-      .replace(/\{\{violations\}\}/g, formalViolations)
-      .replace(
-        /\{\{portalLink\}\}/g,
-        `<a href="${portalLink}">${portalLink}</a>`,
-      )
-      .replace(/\{\{date\}\}/g, dateStr);
 
     return { html };
   },

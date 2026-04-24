@@ -108,3 +108,39 @@ export const generateText = action({
     }
   },
 });
+
+/** Optional Whisper transcription (inspector mic); requires OPENAI_API_KEY on Convex. */
+export const transcribeAudio = action({
+  args: {
+    audioBase64: v.string(),
+    mimeType: v.string(),
+  },
+  handler: async (_ctx, args): Promise<{ text: string; error?: string }> => {
+    const key = process.env.OPENAI_API_KEY;
+    if (!key) {
+      return { text: "", error: "OPENAI_API_KEY is not configured" };
+    }
+    try {
+      const buf = Buffer.from(args.audioBase64, "base64");
+      const form = new FormData();
+      const blob = new Blob([buf], { type: args.mimeType || "audio/webm" });
+      form.append("file", blob, "clip.webm");
+      form.append("model", "whisper-1");
+      const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}` },
+        body: form,
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("Whisper error:", res.status, errText);
+        return { text: "", error: `Transcription failed (${res.status})` };
+      }
+      const data = (await res.json()) as { text?: string };
+      return { text: data.text ?? "" };
+    } catch (e) {
+      console.error("transcribeAudio:", e);
+      return { text: "", error: "Transcription request failed" };
+    }
+  },
+});

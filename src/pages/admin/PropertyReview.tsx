@@ -17,13 +17,6 @@ const SEV_COLORS: Record<string, string> = {
   low: "bg-green-50 border-l-4 border-green-500",
 };
 
-const ANALYSIS_ICONS: Record<string, string> = {
-  pending: "⏳",
-  processing: "🔄",
-  done: "✅",
-  error: "❌",
-};
-
 export default function PropertyReview() {
   const navigate = useNavigate();
   const { propertyId } = useParams<{ propertyId: string }>();
@@ -50,8 +43,10 @@ export default function PropertyReview() {
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
   const violations = useQuery(api.violations.listByProperty, { propertyId: pid });
   const fixPhotos = useQuery(api.fixPhotos.listByProperty, { propertyId: pid });
+  const storedLetter = useQuery(api.properties.getLetterHtml, { id: pid });
 
   const updateEmail = useMutation(api.properties.updateEmail);
+  const setFixVerification = useMutation(api.fixPhotos.setVerification);
   const updateViolation = useMutation(api.violations.update);
   const removeViolation = useMutation(api.violations.remove);
   const createPublic = useMutation(api.violations.createPublic);
@@ -86,6 +81,16 @@ export default function PropertyReview() {
     }
   };
 
+  const handleLoadStoredLetter = () => {
+    const html = storedLetter?.html;
+    if (!html) {
+      showToast("No stored letter for this property yet");
+      return;
+    }
+    setLetterHtml(html);
+    setShowPreview(true);
+  };
+
   const handleSend = async () => {
     if (!letterHtml) return;
     setSending(true);
@@ -110,22 +115,34 @@ export default function PropertyReview() {
   };
 
   if (!property) {
-    return <div className="flex items-center justify-center min-h-screen">Loading...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gradient-hero">
+        <div className="text-5xl animate-spin mb-4">🔄</div>
+        <p className="text-white font-medium">Loading…</p>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Sticky top bar */}
-      <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b bg-background">
-        <button className="text-sm text-blue-600 hover:underline" onClick={() => navigate("/admin/dashboard")}>
-          ← Dashboard
-        </button>
-        <h1 className="font-semibold truncate max-w-xs">{property.address}</h1>
-        <div className="w-20" />
+    <div className="min-h-screen bg-[#f8f7ff]">
+      <div className="sticky top-0 z-10 gradient-admin px-4 pt-4 pb-3 shadow-md">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            className="text-sm text-purple-100 hover:text-white font-medium transition-colors"
+            onClick={() => navigate("/admin/dashboard")}
+          >
+            ← Dashboard
+          </button>
+          <h1 className="font-extrabold text-white text-sm truncate max-w-[50%] text-center">{property.address}</h1>
+          <div className="w-20" />
+        </div>
       </div>
 
       {toast && (
-        <div className="mx-4 mt-4 p-3 bg-green-100 text-green-800 rounded text-sm">{toast}</div>
+        <div className="mx-4 mt-4 p-3 bg-green-50 text-green-800 rounded-xl border border-green-200 text-sm font-medium">
+          {toast}
+        </div>
       )}
 
       <div className="max-w-6xl mx-auto px-4 py-6">
@@ -154,9 +171,6 @@ export default function PropertyReview() {
                               className="w-full h-32 object-cover rounded border"
                             />
                           </a>
-                          <span className="absolute bottom-1 right-1 text-lg">
-                            {ANALYSIS_ICONS[photo.analysisStatus]}
-                          </span>
                           {photo.inspectorNote && (
                             <p className="text-xs text-muted-foreground mt-1 truncate">
                               {photo.inspectorNote}
@@ -173,6 +187,40 @@ export default function PropertyReview() {
 
           {/* Right: Violations + Actions */}
           <div className="space-y-4">
+            {(property.previousFrontObs ||
+              property.previousBackObs ||
+              property.previousInspectionSummary ||
+              property.previousInspectorComments) && (
+              <div className="rounded border bg-muted/40 p-3 text-sm space-y-1">
+                <h3 className="font-semibold text-sm">Prior inspection (imported)</h3>
+                {property.previousInspectionSummary && (
+                  <p className="whitespace-pre-wrap text-xs">{property.previousInspectionSummary}</p>
+                )}
+                {!property.previousInspectionSummary && (
+                  <>
+                    {property.previousFrontObs && (
+                      <p>
+                        <span className="font-medium">Front: </span>
+                        {property.previousFrontObs}
+                      </p>
+                    )}
+                    {property.previousBackObs && (
+                      <p>
+                        <span className="font-medium">Back: </span>
+                        {property.previousBackObs}
+                      </p>
+                    )}
+                    {property.previousInspectorComments && (
+                      <p>
+                        <span className="font-medium">Comments: </span>
+                        {property.previousInspectorComments}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Email */}
             <div>
               <h2 className="text-lg font-semibold mb-2">Homeowner Email</h2>
@@ -211,7 +259,10 @@ export default function PropertyReview() {
                     rows={2}
                   />
                   <div className="flex gap-2">
-                    <Select value={newViolSeverity} onValueChange={(v: any) => setNewViolSeverity(v)}>
+                    <Select
+                      value={newViolSeverity}
+                      onValueChange={(v) => setNewViolSeverity(v as "low" | "medium" | "high")}
+                    >
                       <SelectTrigger className="w-32">
                         <SelectValue />
                       </SelectTrigger>
@@ -290,9 +341,58 @@ export default function PropertyReview() {
                             </div>
                           )}
                           {fixPhotoForViolation.length > 0 && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {fixPhotoForViolation.length} fix photo(s) submitted
-                            </p>
+                            <div className="mt-2 space-y-2 border-t pt-2">
+                              {fixPhotoForViolation.map((fp) => (
+                                <div key={fp._id} className="flex flex-wrap gap-2 items-start">
+                                  <a href={fp.publicUrl} target="_blank" rel="noopener noreferrer">
+                                    <img
+                                      src={fp.publicUrl}
+                                      alt="fix"
+                                      className="w-20 h-20 object-cover rounded border"
+                                    />
+                                  </a>
+                                  <div className="flex-1 min-w-[140px] space-y-1">
+                                    <Select
+                                      value={fp.verificationStatus}
+                                      onValueChange={async (status) => {
+                                        await setFixVerification({
+                                          id: fp._id,
+                                          status: status as
+                                            | "pending"
+                                            | "resolved"
+                                            | "notResolved"
+                                            | "needsReview",
+                                          note: fp.verificationNote ?? "",
+                                        });
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="pending">Pending</SelectItem>
+                                        <SelectItem value="needsReview">Needs review</SelectItem>
+                                        <SelectItem value="resolved">Resolved</SelectItem>
+                                        <SelectItem value="notResolved">Not resolved</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                    <Input
+                                      className="text-xs h-8"
+                                      placeholder="Reviewer note"
+                                      defaultValue={fp.verificationNote ?? ""}
+                                      key={fp._id + (fp.verificationNote ?? "")}
+                                      onBlur={async (e) => {
+                                        await setFixVerification({
+                                          id: fp._id,
+                                          status: fp.verificationStatus,
+                                          note: e.target.value,
+                                        });
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
                           )}
                         </div>
                         <div className="flex gap-1 shrink-0">
@@ -333,16 +433,61 @@ export default function PropertyReview() {
             </div>
 
             {/* Letter actions */}
-            <div className="pt-2 border-t flex gap-2 flex-wrap">
-              <Button onClick={handleGenerate} disabled={generating}>
-                {generating ? "Generating..." : "Generate Letter"}
-              </Button>
+            <div className="pt-2 border-t space-y-2">
+              <div className="flex gap-2 flex-wrap">
+                <Button onClick={handleGenerate} disabled={generating}>
+                  {generating ? "Generating…" : "Regenerate preview"}
+                </Button>
+                <Button variant="outline" onClick={handleLoadStoredLetter} disabled={!storedLetter?.html}>
+                  Load stored letter
+                </Button>
+              </div>
+              {storedLetter?.generatedLetterAt && (
+                <p className="text-xs text-muted-foreground">
+                  Stored letter saved: {new Date(storedLetter.generatedLetterAt).toLocaleString()}
+                </p>
+              )}
               {property.letterSentAt && (
-                <p className="text-xs text-muted-foreground self-center">
-                  Last sent: {new Date(property.letterSentAt).toLocaleDateString()}
+                <p className="text-xs text-muted-foreground">
+                  Last emailed: {new Date(property.letterSentAt).toLocaleDateString()}
                 </p>
               )}
             </div>
+
+            {(fixPhotos ?? []).some((fp) => !fp.violationId) && (
+              <div className="rounded border p-3 space-y-2">
+                <h3 className="text-sm font-semibold">Fix photos (no linked violation)</h3>
+                {(fixPhotos ?? [])
+                  .filter((fp) => !fp.violationId)
+                  .map((fp) => (
+                    <div key={fp._id} className="flex flex-wrap gap-2 items-start">
+                      <a href={fp.publicUrl} target="_blank" rel="noopener noreferrer">
+                        <img src={fp.publicUrl} alt="fix" className="w-20 h-20 object-cover rounded border" />
+                      </a>
+                      <Select
+                        value={fp.verificationStatus}
+                        onValueChange={async (status) => {
+                          await setFixVerification({
+                            id: fp._id,
+                            status: status as "pending" | "resolved" | "notResolved" | "needsReview",
+                            note: fp.verificationNote ?? "",
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="h-8 text-xs w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="needsReview">Needs review</SelectItem>
+                          <SelectItem value="resolved">Resolved</SelectItem>
+                          <SelectItem value="notResolved">Not resolved</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

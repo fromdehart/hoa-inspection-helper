@@ -4,6 +4,8 @@ import path from "path";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  /** Ensures SPA fallback + routing match Vercel’s Vite SPA guidance */
+  appType: "spa",
   base: "/",
   server: {
     host: "::",
@@ -11,6 +13,11 @@ export default defineConfig({
     hmr: {
       overlay: false,
     },
+  },
+  /** Same host/port as dev so `npm run local:vercel` matches production styling at localhost:8080 */
+  preview: {
+    host: "::",
+    port: 8080,
   },
   plugins: [react()],
   resolve: {
@@ -21,19 +28,8 @@ export default defineConfig({
   build: {
     outDir: "dist",
     assetsDir: "assets",
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ["react", "react-dom"],
-          router: ["react-router-dom"],
-          convex: ["convex"],
-          ui: ["@radix-ui/react-dialog", "@radix-ui/react-tabs"],
-          icons: ["lucide-react"],
-        },
-      },
-    },
     // Enable compression and minification
-    minify: 'terser',
+    minify: "terser",
     terserOptions: {
       compress: {
         drop_console: true,

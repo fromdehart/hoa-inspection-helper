@@ -46,16 +46,20 @@ export default function HomeownerPortal() {
 
   if (property === undefined) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-muted-foreground">Loading...</p>
+      <div className="flex flex-col items-center justify-center min-h-screen gradient-hero">
+        <div className="text-5xl animate-spin mb-4">🔄</div>
+        <p className="text-white font-medium">Loading portal…</p>
       </div>
     );
   }
 
   if (property === null) {
     return (
-      <div className="flex items-center justify-center min-h-screen px-4">
-        <p className="text-muted-foreground">Portal link not found.</p>
+      <div className="min-h-screen gradient-hero flex items-center justify-center px-6">
+        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 text-center max-w-sm">
+          <p className="text-white font-semibold">Portal link not found.</p>
+          <p className="text-sky-200 text-sm mt-2">Check the link from your letter or contact the HOA.</p>
+        </div>
       </div>
     );
   }
@@ -83,18 +87,19 @@ export default function HomeownerPortal() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-2xl mx-auto px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold">{property.address}</h1>
-          <p className="text-muted-foreground mt-1">HOA Inspection Results</p>
-          <div className="mt-2">
-            <Badge variant="outline">
-              {violations?.length ?? 0} violation(s)
-            </Badge>
-          </div>
+    <div className="min-h-screen bg-[#f8f7ff]">
+      <div className="gradient-inspector px-4 pt-8 pb-6">
+        <p className="text-sky-100 text-xs font-medium uppercase tracking-widest text-center">Homeowner portal</p>
+        <h1 className="text-xl font-extrabold text-white text-center mt-1 truncate px-2">{property.address}</h1>
+        <p className="text-sky-200 text-sm text-center mt-1">HOA inspection results</p>
+        <div className="flex justify-center mt-3">
+          <span className="inline-flex items-center rounded-full bg-white/20 text-white text-xs font-semibold px-3 py-1 border border-white/30">
+            {violations?.length ?? 0} violation(s)
+          </span>
         </div>
+      </div>
 
+      <div className="max-w-2xl mx-auto px-4 py-6">
         <div className="space-y-4">
           {(violations ?? []).map((v) => {
             const evidencePhoto = (photos ?? []).find((p) => p._id === v.photoId);
@@ -104,7 +109,7 @@ export default function HomeownerPortal() {
             return (
               <div
                 key={v._id}
-                className={`rounded-xl p-4 ${SEV_COLORS[v.severity ?? "low"] ?? "border"}`}
+                className={`rounded-2xl p-4 shadow-sm border border-gray-100 bg-white ${SEV_COLORS[v.severity ?? "low"] ?? "border"}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
@@ -198,7 +203,7 @@ export default function HomeownerPortal() {
           )}
         </div>
 
-        <footer className="mt-12 pt-6 border-t text-center text-sm text-muted-foreground">
+        <footer className="mt-10 pt-6 text-center text-sm text-gray-500">
           Questions? Contact your HOA.
         </footer>
       </div>

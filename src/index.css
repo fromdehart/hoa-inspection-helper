@@ -4,22 +4,96 @@
 @tailwind components;
 @tailwind utilities;
 
+/* HSL channel triplets (no hsl() wrapper) — required for theme colors like bg-background */
 @layer base {
   :root {
+    --background: 0 0% 99.5%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --primary-light: 240 5% 18%;
+    --primary-dark: 240 6% 6%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 45%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --gradient-hero: linear-gradient(135deg, hsl(346 77% 58%) 0%, hsl(199 89% 48%) 100%);
+    --gradient-subtle: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(240 4.8% 96%) 100%);
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%) 0%, hsl(240 4.8% 98%) 100%);
+
+    --shadow-soft: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-medium: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.06);
+    --shadow-large: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.06);
+    --shadow-glow: 0 0 0 1px hsl(240 5.9% 90% / 0.6), 0 10px 28px -10px hsl(346 77% 58% / 0.22);
+
     --accent-coral: #ff5a5f;
     --accent-lime: #b4f000;
     --accent-sky: #00c2ff;
     --accent-yellow: #ffd500;
-    --background: #fefefe;
-    --foreground: #1a1a1a;
   }
 
   * {
-    @apply border-gray-200;
+    @apply border-border;
   }
 
   body {
+    @apply bg-background text-foreground antialiased;
     font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-    @apply bg-[var(--background)] text-[var(--foreground)] antialiased;
+  }
+}
+
+/* Landing + marketing utilities (restored from git 3c11e82 — “redesign UI” commit) */
+@layer utilities {
+  .gradient-admin {
+    background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  }
+  .gradient-inspector {
+    background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+  }
+  .gradient-hero {
+    background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  }
+  .gradient-success {
+    background: linear-gradient(135deg, #84cc16 0%, #22c55e 100%);
+  }
+  .card-fun {
+    @apply rounded-2xl border-2 border-white/60 shadow-lg;
+  }
+  .btn-bounce {
+    @apply transition-all duration-150 active:scale-95;
+  }
+  .text-gradient-admin {
+    background: linear-gradient(135deg, #7c3aed, #4f46e5);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .text-gradient-inspector {
+    background: linear-gradient(135deg, #0ea5e9, #06b6d4);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 }

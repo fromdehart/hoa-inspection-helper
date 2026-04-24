@@ -53,24 +53,29 @@ export default function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <button
-          className="text-sm text-blue-600 hover:underline"
-          onClick={() => navigate("/admin/dashboard")}
-        >
-          ← Dashboard
-        </button>
-        <h1 className="font-bold text-lg">Settings</h1>
-        <div className="w-20" />
+    <div className="min-h-screen bg-[#f8f7ff]">
+      <div className="gradient-admin px-4 pt-8 pb-5">
+        <div className="flex items-center justify-between">
+          <button
+            type="button"
+            className="text-sm text-purple-100 hover:text-white font-medium transition-colors"
+            onClick={() => navigate("/admin/dashboard")}
+          >
+            ← Dashboard
+          </button>
+          <h1 className="font-extrabold text-white text-xl">⚙️ Settings</h1>
+          <div className="w-20" />
+        </div>
+        <p className="text-purple-200 text-xs mt-2 text-center">Letter templates & reference text</p>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
         {/* AI Config */}
-        <section>
-          <h2 className="text-lg font-semibold mb-4">AI Configuration</h2>
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold text-gray-800 mb-1">Reference text (optional)</h2>
           <p className="text-xs text-muted-foreground mb-4">
-            Changes are auto-saved on blur. These values are sent to the AI with each photo analysis.
+            Stored for your records. Photo-based AI inspection is disabled; letter generation may still use
+            OpenAI when configured, to polish wording from inspector notes or violation lists.
           </p>
 
           <div className="space-y-4">
@@ -99,11 +104,13 @@ export default function Settings() {
         </section>
 
         {/* Templates */}
-        <section>
-          <h2 className="text-lg font-semibold mb-2">Templates</h2>
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold text-gray-800 mb-2">Templates</h2>
           <p className="text-xs text-muted-foreground mb-4">
             Available variables: <code className="bg-muted px-1 rounded">{"{{address}}"}</code>{" "}
             <code className="bg-muted px-1 rounded">{"{{violations}}"}</code>{" "}
+            <code className="bg-muted px-1 rounded">{"{{inspectorFindings}}"}</code>{" "}
+            <code className="bg-muted px-1 rounded">{"{{priorInspectionReference}}"}</code>{" "}
             <code className="bg-muted px-1 rounded">{"{{portalLink}}"}</code>{" "}
             <code className="bg-muted px-1 rounded">{"{{date}}"}</code>
           </p>
