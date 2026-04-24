@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { ChevronDown, Loader2, Trash2 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
@@ -78,7 +78,7 @@ export default function PropertyCapture() {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [nextHouseModalOpen, setNextHouseModalOpen] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState<Id<"photos"> | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: Id<"photos"> } | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,7 +97,7 @@ export default function PropertyCapture() {
   );
 
   const createPhoto = useMutation(api.photos.create);
-  const removePhoto = useMutation(api.photos.remove);
+  const removePhotoForInspector = useAction(api.photos.removeForInspector);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
   const updatePropertyStatus = useMutation(api.properties.updateStatus);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
@@ -237,14 +237,14 @@ export default function PropertyCapture() {
   };
 
   const handleConfirmDeletePhoto = () => {
-    if (!deleteTargetId) return;
-    const id = deleteTargetId;
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
     const n = propertyPhotos.length;
     const i = selectedPhotoIndex;
     setDeleteSubmitting(true);
-    void removePhoto({ id, propertyId: pid })
+    void removePhotoForInspector({ id, propertyId: pid })
       .then(() => {
-        setDeleteTargetId(null);
+        setDeleteTarget(null);
         if (n <= 1) {
           setViewerOpen(false);
         } else {
@@ -253,7 +253,12 @@ export default function PropertyCapture() {
       })
       .catch((err) => {
         console.error(err);
-        alert("Could not delete photo. Please try again.");
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(
+          msg.includes("upload server")
+            ? `Photo was removed from the inspection, but the file on the upload server could not be deleted: ${msg}`
+            : msg || "Could not delete photo. Please try again.",
+        );
       })
       .finally(() => setDeleteSubmitting(false));
   };
@@ -620,9 +625,9 @@ export default function PropertyCapture() {
       </Dialog>
 
       <AlertDialog
-        open={deleteTargetId !== null}
+        open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open && !deleteSubmitting) setDeleteTargetId(null);
+          if (!open && !deleteSubmitting) setDeleteTarget(null);
         }}
       >
         <AlertDialogContent className="max-w-[min(92vw,22rem)] z-[100] border-gray-200">
@@ -668,7 +673,7 @@ export default function PropertyCapture() {
                 <button
                   type="button"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/90 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
-                  onClick={() => setDeleteTargetId(selectedPhoto._id)}
+                  onClick={() => setDeleteTarget({ id: selectedPhoto._id })}
                 >
                   <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
                   Delete

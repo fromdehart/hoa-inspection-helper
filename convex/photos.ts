@@ -1,4 +1,5 @@
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
 export const listByProperty = query({
@@ -62,6 +63,41 @@ export const getById = internalQuery({
   },
 });
 
+/** Used by `removeForInspector` action before DB delete (to get `filePath` for the upload VPS). */
+export const getFilePathForRemove = internalQuery({
+  args: { id: v.id("photos"), propertyId: v.id("properties") },
+  handler: async (ctx, args) => {
+    const photo = await ctx.db.get(args.id);
+    if (!photo) throw new Error("Photo not found.");
+    if (photo.propertyId !== args.propertyId) {
+      throw new Error("Photo does not belong to this property.");
+    }
+    return { filePath: photo.filePath };
+  },
+});
+
+export const removeRecord = internalMutation({
+  args: { id: v.id("photos"), propertyId: v.id("properties") },
+  handler: async (ctx, args) => {
+    const photo = await ctx.db.get(args.id);
+    if (!photo) throw new Error("Photo not found.");
+    if (photo.propertyId !== args.propertyId) {
+      throw new Error("Photo does not belong to this property.");
+    }
+
+    const violations = await ctx.db
+      .query("violations")
+      .withIndex("by_photo", (q) => q.eq("photoId", args.id))
+      .collect();
+    for (const v of violations) {
+      await ctx.db.patch(v._id, { photoId: undefined });
+    }
+
+    await ctx.db.delete(args.id);
+    return null;
+  },
+});
+
 export const create = mutation({
   args: {
     propertyId: v.id("properties"),
@@ -94,31 +130,42 @@ export const updateNote = mutation({
   },
 });
 
-/** Inspector capture: remove a mistaken photo. Caller must pass `propertyId` so we only delete photos for the open house. */
-export const remove = mutation({
+/**
+ * Inspector: remove photo from Convex, then delete the blob on the upload VPS.
+ * Set Convex env `UPLOAD_SERVER_URL` (e.g. https://hoauploads.example.com) and `UPLOAD_DELETE_TOKEN` (same as VPS).
+ */
+export const removeForInspector = action({
   args: {
     id: v.id("photos"),
     propertyId: v.id("properties"),
   },
   handler: async (ctx, args) => {
-    const photo = await ctx.db.get(args.id);
-    if (!photo) {
-      throw new Error("Photo not found.");
-    }
-    if (photo.propertyId !== args.propertyId) {
-      throw new Error("Photo does not belong to this property.");
+    const { filePath } = await ctx.runQuery(internal.photos.getFilePathForRemove, args);
+    await ctx.runMutation(internal.photos.removeRecord, args);
+
+    const base = process.env.UPLOAD_SERVER_URL;
+    const token = process.env.UPLOAD_DELETE_TOKEN;
+    if (!base || !token) {
+      console.warn(
+        "[photos.removeForInspector] UPLOAD_SERVER_URL or UPLOAD_DELETE_TOKEN unset; skipping VPS file delete.",
+      );
+      return;
     }
 
-    const violations = await ctx.db
-      .query("violations")
-      .withIndex("by_photo", (q) => q.eq("photoId", args.id))
-      .collect();
-    for (const v of violations) {
-      await ctx.db.patch(v._id, { photoId: undefined });
-    }
+    const url = `${base.replace(/\/$/, "")}/api/delete-file`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Upload-Delete-Token": token,
+      },
+      body: JSON.stringify({ filePath }),
+    });
 
-    await ctx.db.delete(args.id);
-    return null;
+    if (!res.ok) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(`Could not delete file on upload server (${res.status}): ${msg}`.trim());
+    }
   },
 });
 
