@@ -94,6 +94,34 @@ export const updateNote = mutation({
   },
 });
 
+/** Inspector capture: remove a mistaken photo. Caller must pass `propertyId` so we only delete photos for the open house. */
+export const remove = mutation({
+  args: {
+    id: v.id("photos"),
+    propertyId: v.id("properties"),
+  },
+  handler: async (ctx, args) => {
+    const photo = await ctx.db.get(args.id);
+    if (!photo) {
+      throw new Error("Photo not found.");
+    }
+    if (photo.propertyId !== args.propertyId) {
+      throw new Error("Photo does not belong to this property.");
+    }
+
+    const violations = await ctx.db
+      .query("violations")
+      .withIndex("by_photo", (q) => q.eq("photoId", args.id))
+      .collect();
+    for (const v of violations) {
+      await ctx.db.patch(v._id, { photoId: undefined });
+    }
+
+    await ctx.db.delete(args.id);
+    return null;
+  },
+});
+
 export const updateAnalysisStatus = internalMutation({
   args: {
     id: v.id("photos"),

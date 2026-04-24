@@ -1,11 +1,21 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Loader2, Trash2 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { uploadPhoto } from "@/lib/uploadClient";
 import { runPool } from "@/lib/runPool";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 /** Max parallel uploads per batch (mobile uplink is usually the bottleneck; 4 is a good balance). */
@@ -50,12 +60,15 @@ export default function PropertyCapture() {
   const { propertyId } = useParams<{ propertyId: string }>();
   const pid = propertyId as Id<"properties">;
 
-  const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     done: number;
     fail: number;
     total: number;
   } | null>(null);
+  /** One stable id per file in flight → spinner tiles stay keyed until that upload finishes. */
+  const [pendingSlotIds, setPendingSlotIds] = useState<string[]>([]);
+  const activeUploadBatchesRef = useRef(0);
+  const uploadStatsRef = useRef({ started: 0, done: 0, fail: 0 });
   const [note, setNote] = useState("");
   const [listening, setListening] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
@@ -65,6 +78,8 @@ export default function PropertyCapture() {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const [nextHouseModalOpen, setNextHouseModalOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<Id<"photos"> | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -82,6 +97,7 @@ export default function PropertyCapture() {
   );
 
   const createPhoto = useMutation(api.photos.create);
+  const removePhoto = useMutation(api.photos.remove);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
   const updatePropertyStatus = useMutation(api.properties.updateStatus);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
@@ -158,18 +174,24 @@ export default function PropertyCapture() {
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (files.length === 0 || !propertyId) return;
 
-    setUploading(true);
-    setUploadProgress({ done: 0, fail: 0, total: files.length });
+    const slotIds = files.map(() => crypto.randomUUID());
+    const batchTotal = files.length;
+    let batchDone = 0;
+    let batchFail = 0;
+
+    activeUploadBatchesRef.current++;
+    uploadStatsRef.current.started += batchTotal;
+    setUploadProgress({
+      done: uploadStatsRef.current.done,
+      fail: uploadStatsRef.current.fail,
+      total: uploadStatsRef.current.started,
+    });
+    setPendingSlotIds((prev) => [...prev, ...slotIds]);
 
     void (async () => {
-      let done = 0;
-      let fail = 0;
-      const bump = () => {
-        setUploadProgress({ done, fail, total: files.length });
-      };
-
       try {
-        await runPool(files, UPLOAD_CONCURRENCY, async (file) => {
+        await runPool(files, UPLOAD_CONCURRENCY, async (file, index) => {
+          const slotId = slotIds[index];
           try {
             const result = await uploadPhoto(file, propertyId, UPLOAD_SECTION);
             await createPhoto({
@@ -178,22 +200,33 @@ export default function PropertyCapture() {
               filePath: result.filePath,
               publicUrl: result.publicUrl,
             });
-            done++;
+            uploadStatsRef.current.done++;
+            batchDone++;
           } catch (err) {
-            fail++;
+            uploadStatsRef.current.fail++;
+            batchFail++;
             console.error("Photo upload failed:", err);
+          } finally {
+            setPendingSlotIds((prev) => prev.filter((id) => id !== slotId));
+            setUploadProgress({
+              done: uploadStatsRef.current.done,
+              fail: uploadStatsRef.current.fail,
+              total: uploadStatsRef.current.started,
+            });
           }
-          bump();
         });
 
-        if (fail > 0) {
+        if (batchFail > 0) {
           alert(
-            `Finished ${files.length} uploads: ${done} saved, ${fail} failed — please retry the failed ones.`,
+            `Finished ${batchTotal} uploads: ${batchDone} saved, ${batchFail} failed — please retry the failed ones.`,
           );
         }
       } finally {
-        setUploading(false);
-        setUploadProgress(null);
+        activeUploadBatchesRef.current--;
+        if (activeUploadBatchesRef.current === 0) {
+          setUploadProgress(null);
+          uploadStatsRef.current = { started: 0, done: 0, fail: 0 };
+        }
       }
     })();
   };
@@ -201,6 +234,28 @@ export default function PropertyCapture() {
   const openViewerAt = (index: number) => {
     setSelectedPhotoIndex(index);
     setViewerOpen(true);
+  };
+
+  const handleConfirmDeletePhoto = () => {
+    if (!deleteTargetId) return;
+    const id = deleteTargetId;
+    const n = propertyPhotos.length;
+    const i = selectedPhotoIndex;
+    setDeleteSubmitting(true);
+    void removePhoto({ id, propertyId: pid })
+      .then(() => {
+        setDeleteTargetId(null);
+        if (n <= 1) {
+          setViewerOpen(false);
+        } else {
+          setSelectedPhotoIndex(Math.min(i, n - 2));
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        alert("Could not delete photo. Please try again.");
+      })
+      .finally(() => setDeleteSubmitting(false));
   };
 
   const selectedPhoto = propertyPhotos[selectedPhotoIndex];
@@ -413,35 +468,30 @@ export default function PropertyCapture() {
         />
         <button
           type="button"
-          className={`btn-bounce w-full py-4 rounded-2xl font-bold text-lg shadow-sm border-2 transition-all ${
-            uploading
-              ? "bg-gray-100 border-gray-200 text-gray-400"
-              : "bg-white border-dashed border-sky-300 text-sky-600 hover:bg-sky-50"
+          className={`btn-bounce w-full py-4 rounded-2xl font-bold text-lg shadow-sm border-2 transition-all bg-white border-dashed border-sky-300 text-sky-600 hover:bg-sky-50 ${
+            pendingSlotIds.length > 0 ? "ring-2 ring-sky-200 ring-offset-1" : ""
           }`}
-          disabled={uploading}
+          disabled={!propertyId}
           onClick={() => fileInputRef.current?.click()}
         >
-          {uploading ? (
-            <span className="flex flex-col items-center justify-center gap-0.5 sm:flex-row sm:gap-2">
-              <span className="flex items-center gap-2">
-                <span className="animate-spin">⏳</span>
-                {uploadProgress ? (
+          <span className="flex flex-col items-center justify-center gap-1">
+            <span>📸 Take Photo</span>
+            {(pendingSlotIds.length > 0 || uploadProgress !== null) && uploadProgress ? (
+              <span className="text-sm font-normal text-sky-800 flex flex-col items-center gap-0.5 sm:flex-row sm:items-center sm:gap-2">
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
                   <span>
-                    Uploading {uploadProgress.done + uploadProgress.fail}/{uploadProgress.total}
+                    {uploadProgress.done + uploadProgress.fail}/{uploadProgress.total}
                     {uploadProgress.fail > 0 ? ` (${uploadProgress.fail} failed)` : ""}
                   </span>
-                ) : (
-                  <span>Uploading…</span>
-                )}
+                </span>
+                <span className="text-xs font-normal opacity-90">Up to {UPLOAD_CONCURRENCY} at a time</span>
               </span>
-              <span className="text-xs font-normal opacity-90">Up to {UPLOAD_CONCURRENCY} at a time</span>
-            </span>
-          ) : (
-            "📸 Take Photo"
-          )}
+            ) : null}
+          </span>
         </button>
 
-        {propertyPhotos.length > 0 && (
+        {(propertyPhotos.length > 0 || pendingSlotIds.length > 0) && (
           <div className="flex gap-2 overflow-x-auto pb-1">
             {propertyPhotos.map((photo, idx) => (
               <button
@@ -456,6 +506,16 @@ export default function PropertyCapture() {
                   className="w-20 h-20 object-cover rounded-xl border-2 border-white shadow-sm hover:border-sky-300 transition-colors cursor-zoom-in"
                 />
               </button>
+            ))}
+            {pendingSlotIds.map((slotId) => (
+              <div
+                key={slotId}
+                role="status"
+                aria-label="Uploading photo"
+                className="relative shrink-0 w-20 h-20 rounded-xl border-2 border-dashed border-sky-200 bg-sky-50 flex items-center justify-center shadow-sm"
+              >
+                <Loader2 className="h-7 w-7 text-sky-500 animate-spin" aria-hidden />
+              </div>
             ))}
           </div>
         )}
@@ -559,6 +619,38 @@ export default function PropertyCapture() {
         </DialogContent>
       </Dialog>
 
+      <AlertDialog
+        open={deleteTargetId !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteSubmitting) setDeleteTargetId(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-[min(92vw,22rem)] z-[100] border-gray-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this photo?</AlertDialogTitle>
+            <AlertDialogDescription className="text-left">
+              It will be removed from this inspection. Linked violation notes stay, but will no longer show this
+              image. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
+            <AlertDialogCancel className="w-full sm:w-full" disabled={deleteSubmitting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="w-full bg-red-600 text-white hover:bg-red-700 focus:ring-red-600 sm:w-full"
+              disabled={deleteSubmitting}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDeletePhoto();
+              }}
+            >
+              {deleteSubmitting ? "Deleting…" : "Delete photo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {viewerOpen && selectedPhoto && (
         <div
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
@@ -568,17 +660,27 @@ export default function PropertyCapture() {
             className="w-full max-w-4xl bg-black/40 rounded-2xl border border-white/20 p-3"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between text-white text-sm mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-white text-sm mb-2">
               <p className="font-semibold">
                 Photo {selectedPhotoIndex + 1} / {propertyPhotos.length}
               </p>
-              <button
-                type="button"
-                className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
-                onClick={() => setViewerOpen(false)}
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/90 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
+                  onClick={() => setDeleteTargetId(selectedPhoto._id)}
+                >
+                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  className="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+                  onClick={() => setViewerOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
             <div className="relative">
               <img
