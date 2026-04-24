@@ -1,7 +1,8 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "convex/react";
+import { useClerk, useUser } from "@clerk/clerk-react";
 import { api } from "../../../convex/_generated/api";
+import { hasRole } from "@/lib/auth";
 
 const PROGRESS_COLORS = [
   "from-violet-500 to-purple-500",
@@ -13,12 +14,9 @@ const PROGRESS_COLORS = [
 
 export default function StreetList() {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (localStorage.getItem("hoa_inspector") !== "true") {
-      navigate("/inspector");
-    }
-  }, [navigate]);
+  const { signOut } = useClerk();
+  const { user } = useUser();
+  const canAdmin = hasRole(user, "admin");
 
   const streets = useQuery(api.streets.list);
 
@@ -33,16 +31,24 @@ export default function StreetList() {
             <p className="text-sky-100 text-sm font-medium uppercase tracking-widest">Inspector Mode</p>
             <h1 className="text-white font-extrabold text-2xl">Your Streets 🗺️</h1>
           </div>
-          <button
-            type="button"
-            className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-            onClick={() => {
-              localStorage.removeItem("hoa_inspector");
-              navigate("/");
-            }}
-          >
-            Logout
-          </button>
+          <div className="flex gap-2">
+            {canAdmin && (
+              <button
+                type="button"
+                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+                onClick={() => navigate("/admin/dashboard")}
+              >
+                👔 Admin Mode
+              </button>
+            )}
+            <button
+              type="button"
+              className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+              onClick={() => void signOut({ redirectUrl: "/" })}
+            >
+              Logout
+            </button>
+          </div>
         </div>
         {streets && (
           <p className="text-sky-200 text-sm mt-2">

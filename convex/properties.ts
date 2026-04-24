@@ -241,6 +241,36 @@ export const updateInspectorNotes = mutation({
   },
 });
 
+/** Inspector completion without auto-generating a letter. */
+export const completeHouseCapture = mutation({
+  args: {
+    id: v.id("properties"),
+    inspectorNotes: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      inspectorNotes: args.inspectorNotes,
+      status: "complete",
+    });
+    return { ok: true as const };
+  },
+});
+
+/** Persist generated letter HTML from explicit admin generation step. */
+export const saveGeneratedLetterHtml = mutation({
+  args: {
+    id: v.id("properties"),
+    html: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      generatedLetterHtml: args.html,
+      generatedLetterAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 /** Save notes, mark complete, persist generated letter HTML (sync merge, no image AI). */
 export const completeHouseAndSaveLetter = mutation({
   args: {

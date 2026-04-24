@@ -103,16 +103,19 @@ export const generate = action({
 });
 
 export const send = action({
-  args: { propertyId: v.id("properties"), html: v.string() },
+  args: { propertyId: v.id("properties") },
   handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
     const property = await ctx.runQuery(api.properties.get, { id: args.propertyId });
     if (!property?.email) {
       return { success: false, error: "No homeowner email on record" };
     }
+    if (!property.generatedLetterHtml?.trim()) {
+      return { success: false, error: "No generated letter found. Generate the letter first." };
+    }
     const result = await ctx.runAction(api.resend.sendEmail, {
       to: property.email,
       subject: `HOA Inspection Notice — ${property.address}`,
-      html: args.html,
+      html: property.generatedLetterHtml,
     });
     if (result.success) {
       await ctx.runMutation(internal.properties.markLetterSent, { id: args.propertyId });

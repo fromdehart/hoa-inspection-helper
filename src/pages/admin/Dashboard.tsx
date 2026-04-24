@@ -1,9 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
+import { useClerk, useUser } from "@clerk/clerk-react";
 import { api } from "../../../convex/_generated/api";
+import { hasRole } from "@/lib/auth";
+import JSZip from "jszip";
 
 type StatusFilter = "all" | "notStarted" | "inProgress" | "complete";
+type LetterFilter = "all" | "needsGeneration" | "generated" | "sent";
 
 function parseCSV(text: string): Array<{
   address: string;
@@ -44,29 +48,39 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { signOut } = useClerk();
+  const { user } = useUser();
+  const canInspect = hasRole(user, "inspector") || hasRole(user, "admin");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [letterFilter, setLetterFilter] = useState<LetterFilter>("all");
   const [search, setSearch] = useState("");
   const [csvUploading, setCsvUploading] = useState(false);
+  const [photoExporting, setPhotoExporting] = useState(false);
+  const [photoExportLog, setPhotoExportLog] = useState("");
   const [toast, setToast] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (localStorage.getItem("hoa_admin") !== "true") {
-      navigate("/admin");
-    }
-  }, [navigate]);
 
   const properties = useQuery(api.properties.list, {
     status: statusFilter === "all" ? undefined : statusFilter,
   });
   const streets = useQuery(api.streets.list);
+  const photoExportRows = useQuery(api.photos.listForZipExport);
   const importFromCSV = useMutation(api.properties.importFromCSV);
 
   const streetMap = new Map(streets?.map((s) => [s._id, s.name]) ?? []);
 
-  const filtered = (properties ?? []).filter((p) =>
-    p.address.toLowerCase().includes(search.toLowerCase()),
-  );
+  const filtered = (properties ?? []).filter((p) => {
+    const searchMatch = p.address.toLowerCase().includes(search.toLowerCase());
+    const letterMatch =
+      letterFilter === "all"
+        ? true
+        : letterFilter === "needsGeneration"
+          ? p.status === "complete" && !p.generatedLetterAt
+          : letterFilter === "generated"
+            ? !!p.generatedLetterAt && !p.letterSentAt
+            : !!p.letterSentAt;
+    return searchMatch && letterMatch;
+  });
 
   const handleCSVChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -90,11 +104,85 @@ export default function Dashboard() {
     }
   };
 
+  const sanitizeName = (s: string) => s.replace(/[/\\?%*:|"<>]/g, "-").trim();
+  const getExtFromPath = (s: string) => {
+    const match = s.match(/\.([a-zA-Z0-9]+)(?:\?|$)/);
+    return match ? `.${match[1].toLowerCase()}` : ".jpg";
+  };
+
+  const handlePhotoExport = async () => {
+    if (!photoExportRows?.length) {
+      setToast("No inspector photos found to export");
+      setTimeout(() => setToast(""), 4000);
+      return;
+    }
+
+    setPhotoExporting(true);
+    setPhotoExportLog("");
+    const zip = new JSZip();
+    const nameUse = new Map<string, number>();
+    let added = 0;
+    let skipped = 0;
+
+    try {
+      for (let i = 0; i < photoExportRows.length; i++) {
+        const row = photoExportRows[i];
+        setPhotoExportLog(
+          `Adding ${i + 1}/${photoExportRows.length}: ${row.houseNumber} ${row.streetName} (${row.section})`,
+        );
+        try {
+          const res = await fetch(row.publicUrl);
+          if (!res.ok) {
+            skipped++;
+            continue;
+          }
+          const blob = await res.blob();
+          const streetFolder = sanitizeName(row.streetName) || "Unknown Street";
+          const base = sanitizeName(`${row.houseNumber} ${row.streetName}`) || `${row.houseNumber}`;
+          const ext = getExtFromPath(row.filePath || row.publicUrl);
+          const key = `${streetFolder}/${base}`;
+          const count = (nameUse.get(key) ?? 0) + 1;
+          nameUse.set(key, count);
+          const filename = count === 1 ? `${base}${ext}` : `${base} (${count})${ext}`;
+          zip.file(`${streetFolder}/${filename}`, blob);
+          added++;
+        } catch {
+          skipped++;
+        }
+      }
+
+      setPhotoExportLog("Zipping…");
+      const out = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(out);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `hoa-street-photos-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setToast(`Photo export complete: ${added} added${skipped ? `, ${skipped} skipped` : ""}`);
+      setTimeout(() => setToast(""), 5000);
+      setPhotoExportLog(`Done. Added ${added}${skipped ? `, skipped ${skipped}` : ""}.`);
+    } catch (err) {
+      console.error(err);
+      setToast("Photo export failed: " + String(err));
+      setTimeout(() => setToast(""), 5000);
+      setPhotoExportLog("Error during export.");
+    } finally {
+      setPhotoExporting(false);
+    }
+  };
+
   const tabs: { value: StatusFilter; label: string; emoji: string }[] = [
     { value: "all", label: "All", emoji: "🏘️" },
     { value: "notStarted", label: "Not Started", emoji: "⏳" },
     { value: "inProgress", label: "In Progress", emoji: "🔍" },
     { value: "complete", label: "Complete", emoji: "✅" },
+  ];
+  const letterTabs: { value: LetterFilter; label: string; emoji: string }[] = [
+    { value: "all", label: "All Letters", emoji: "📬" },
+    { value: "needsGeneration", label: "Needs Generation", emoji: "📝" },
+    { value: "generated", label: "Generated", emoji: "📄" },
+    { value: "sent", label: "Sent", emoji: "✅" },
   ];
 
   const totalComplete = (properties ?? []).filter((p) => p.status === "complete").length;
@@ -125,11 +213,25 @@ export default function Dashboard() {
             </button>
             <button
               type="button"
+              disabled={photoExporting || !photoExportRows}
+              className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors disabled:opacity-50"
+              onClick={() => void handlePhotoExport()}
+            >
+              {photoExporting ? "📸 Exporting Photos…" : "📸 Export Photos ZIP"}
+            </button>
+            {canInspect && (
+              <button
+                type="button"
+                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+                onClick={() => navigate("/inspector/streets")}
+              >
+                🚶 Inspector Mode
+              </button>
+            )}
+            <button
+              type="button"
               className="text-sm bg-white/10 hover:bg-white/20 text-white/70 px-3 py-1.5 rounded-full border border-white/20 transition-colors"
-              onClick={() => {
-                localStorage.removeItem("hoa_admin");
-                navigate("/");
-              }}
+              onClick={() => void signOut({ redirectUrl: "/" })}
             >
               Logout
             </button>
@@ -157,6 +259,11 @@ export default function Dashboard() {
         {toast && (
           <div className="mb-4 p-3 bg-green-50 text-green-800 rounded-xl border border-green-200 text-sm font-medium">
             {toast}
+          </div>
+        )}
+        {photoExportLog && (
+          <div className="mb-4 p-3 bg-white text-gray-700 rounded-xl border border-gray-200 text-xs font-mono whitespace-pre-wrap">
+            {photoExportLog}
           </div>
         )}
 
@@ -195,6 +302,22 @@ export default function Dashboard() {
             {csvUploading ? "Importing..." : "📥 Import CSV"}
           </button>
         </div>
+        <div className="flex flex-wrap gap-2 items-center mb-4">
+          {letterTabs.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              className={`btn-bounce px-3 py-1.5 text-sm rounded-full font-semibold transition-all ${
+                letterFilter === t.value
+                  ? "bg-sky-600 text-white shadow-md"
+                  : "bg-white text-gray-600 border border-gray-200 hover:border-sky-300"
+              }`}
+              onClick={() => setLetterFilter(t.value)}
+            >
+              {t.emoji} {t.label}
+            </button>
+          ))}
+        </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
@@ -209,6 +332,9 @@ export default function Dashboard() {
                 <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">
                   Status
                 </th>
+                <th className="text-left px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide hidden md:table-cell">
+                  Letter
+                </th>
                 <th className="text-right px-4 py-3 font-semibold text-gray-500 text-xs uppercase tracking-wide">
                   Action
                 </th>
@@ -217,7 +343,7 @@ export default function Dashboard() {
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-12 text-center">
+                  <td colSpan={5} className="px-4 py-12 text-center">
                     <div className="text-4xl mb-2">{properties === undefined ? "⏳" : "🏚️"}</div>
                     <p className="text-gray-400 font-medium">
                       {properties === undefined ? "Loading..." : "No properties found"}
@@ -243,6 +369,25 @@ export default function Dashboard() {
                       >
                         {cfg.emoji} {cfg.label}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      {p.letterSentAt ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                          ✅ Sent
+                        </span>
+                      ) : p.generatedLetterAt ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-700">
+                          📄 Generated
+                        </span>
+                      ) : p.status === "complete" ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
+                          📝 Needs Generation
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-600">
+                          — Not Ready
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button

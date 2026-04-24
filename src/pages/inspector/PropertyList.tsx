@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -14,12 +13,6 @@ export default function PropertyList() {
   const navigate = useNavigate();
   const { streetId } = useParams<{ streetId: string }>();
   const sid = streetId as Id<"streets">;
-
-  useEffect(() => {
-    if (localStorage.getItem("hoa_inspector") !== "true") {
-      navigate("/inspector");
-    }
-  }, [navigate]);
 
   const data = useQuery(api.streets.getWithProperties, { streetId: sid });
 

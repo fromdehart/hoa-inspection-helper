@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "convex/react";
+import { useClerk } from "@clerk/clerk-react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import html2canvas from "html2canvas";
@@ -47,12 +48,9 @@ async function letterHtmlToPdfBlob(html: string): Promise<Blob> {
 
 export default function LetterExport() {
   const navigate = useNavigate();
+  const { signOut } = useClerk();
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
-
-  useEffect(() => {
-    if (localStorage.getItem("hoa_admin") !== "true") navigate("/admin");
-  }, [navigate]);
 
   const letters = useQuery(api.properties.listGeneratedLetterBodies);
 
@@ -101,10 +99,7 @@ export default function LetterExport() {
             <button
               type="button"
               className="text-sm bg-white/10 hover:bg-white/20 text-white/80 px-3 py-1.5 rounded-full border border-white/20 transition-colors"
-              onClick={() => {
-                localStorage.removeItem("hoa_admin");
-                navigate("/");
-              }}
+              onClick={() => void signOut({ redirectUrl: "/" })}
             >
               Logout
             </button>
@@ -114,8 +109,8 @@ export default function LetterExport() {
       <div className="max-w-xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-4">
           <p className="text-sm text-gray-600">
-            Downloads a ZIP of PDFs built from stored letter HTML for each property that has completed the inspection
-            flow (Next house). Rendering uses your browser; large batches may take a minute.
+            Downloads a ZIP of PDFs built from stored, admin-generated letter HTML. Only properties with generated
+            letters are included. Rendering uses your browser; large batches may take a minute.
           </p>
           <p className="text-sm font-semibold text-gray-800">
             Ready: {letters === undefined ? "…" : letters.length} letter(s)

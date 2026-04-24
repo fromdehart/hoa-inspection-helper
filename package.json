@@ -15,6 +15,7 @@
     "import:summer2025": "tsx scripts/import-summer-2025.ts"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.6",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-label": "^2.1.7",
@@ -31,6 +32,9 @@
     "cmdk": "^1.1.1",
     "convex": "^1.27.3",
     "embla-carousel-react": "^8.6.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.1",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.462.0",
     "openai": "^5.23.0",
     "react": "^18.3.1",
@@ -38,10 +42,7 @@
     "react-router-dom": "^6.30.1",
     "resend": "^6.1.0",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7",
-    "html2canvas": "^1.4.1",
-    "jspdf": "^3.0.1",
-    "jszip": "^3.10.1"
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -56,9 +57,9 @@
     "globals": "^15.15.0",
     "tailwindcss": "^3.4.17",
     "terser": "^5.44.0",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "tsx": "^4.19.4",
     "vite": "^6.4.1",
     "xlsx": "^0.18.5"
   }

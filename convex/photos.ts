@@ -12,6 +12,49 @@ export const listByProperty = query({
   },
 });
 
+/** Admin export helper: all inspector capture photos with street/house metadata. */
+export const listForZipExport = query({
+  args: {},
+  handler: async (ctx) => {
+    const photos = await ctx.db.query("photos").collect();
+    const out: Array<{
+      photoId: string;
+      publicUrl: string;
+      filePath: string;
+      section: "front" | "side" | "back";
+      uploadedAt: number;
+      houseNumber: number;
+      streetName: string;
+      propertyId: string;
+      address: string;
+    }> = [];
+
+    for (const photo of photos) {
+      const property = await ctx.db.get(photo.propertyId);
+      if (!property) continue;
+      const street = await ctx.db.get(property.streetId);
+      if (!street) continue;
+      out.push({
+        photoId: photo._id,
+        publicUrl: photo.publicUrl,
+        filePath: photo.filePath,
+        section: photo.section,
+        uploadedAt: photo.uploadedAt,
+        houseNumber: property.houseNumber,
+        streetName: street.name,
+        propertyId: property._id,
+        address: property.address,
+      });
+    }
+
+    return out.sort((a, b) => {
+      if (a.streetName !== b.streetName) return a.streetName.localeCompare(b.streetName);
+      if (a.houseNumber !== b.houseNumber) return a.houseNumber - b.houseNumber;
+      return a.uploadedAt - b.uploadedAt;
+    });
+  },
+});
+
 export const getById = internalQuery({
   args: { id: v.id("photos") },
   handler: async (ctx, args) => {

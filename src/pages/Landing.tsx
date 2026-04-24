@@ -1,10 +1,14 @@
 import { useNavigate } from "react-router-dom";
+import { useAuth, useUser } from "@clerk/clerk-react";
 import { ONE_SHOT_VERSION } from "@/version";
+import { hasRole } from "@/lib/auth";
 
 export default function Landing() {
   const navigate = useNavigate();
-  const isAdmin = localStorage.getItem("hoa_admin") === "true";
-  const isInspector = localStorage.getItem("hoa_inspector") === "true";
+  const { isSignedIn } = useAuth();
+  const { user } = useUser();
+  const isAdmin = isSignedIn && hasRole(user, "admin");
+  const isInspector = isSignedIn && (hasRole(user, "inspector") || hasRole(user, "admin"));
 
   return (
     <div className="min-h-screen gradient-hero flex flex-col items-center justify-center px-6 py-12">

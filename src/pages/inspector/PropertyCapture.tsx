@@ -26,12 +26,6 @@ export default function PropertyCapture() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
 
-  useEffect(() => {
-    if (localStorage.getItem("hoa_inspector") !== "true") {
-      navigate("/inspector");
-    }
-  }, [navigate]);
-
   const property = useQuery(api.properties.get, { id: pid });
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
   const streetData = useQuery(
@@ -40,7 +34,7 @@ export default function PropertyCapture() {
   );
 
   const createPhoto = useMutation(api.photos.create);
-  const completeHouse = useMutation(api.properties.completeHouseAndSaveLetter);
+  const completeHouse = useMutation(api.properties.completeHouseCapture);
 
   useEffect(() => {
     if (property && property._id === pid) setNote(property.inspectorNotes ?? "");
@@ -289,7 +283,7 @@ export default function PropertyCapture() {
           onClick={handleNextHouse}
         >
           {nextLoading
-            ? "Saving letter…"
+            ? "Saving…"
             : nextProperty
               ? "Next House → 🏠"
               : "Complete Street 🎉"}

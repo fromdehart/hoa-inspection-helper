@@ -15,10 +15,6 @@ export default function Settings() {
   const [reportTpl, setReportTpl] = useState("");
   const [saved, setSaved] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    if (localStorage.getItem("hoa_admin") !== "true") navigate("/admin");
-  }, [navigate]);
-
   const aiConfig = useQuery(api.aiConfig.getAll);
   const letterTemplate = useQuery(api.templates.get, { type: "letter" });
   const reportTemplate = useQuery(api.templates.get, { type: "report" });

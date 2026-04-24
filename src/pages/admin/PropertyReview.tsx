@@ -16,6 +16,7 @@ const SEV_COLORS: Record<string, string> = {
   medium: "bg-amber-50 border-l-4 border-amber-500",
   low: "bg-green-50 border-l-4 border-green-500",
 };
+const OWNER_WORKFLOW_ENABLED = false;
 
 export default function PropertyReview() {
   const navigate = useNavigate();
@@ -34,10 +35,8 @@ export default function PropertyReview() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDesc, setEditDesc] = useState("");
   const [editNote, setEditNote] = useState("");
-
-  useEffect(() => {
-    if (localStorage.getItem("hoa_admin") !== "true") navigate("/admin");
-  }, [navigate]);
+  const [editingInspectorNotes, setEditingInspectorNotes] = useState(false);
+  const [inspectorNotesDraft, setInspectorNotesDraft] = useState("");
 
   const property = useQuery(api.properties.get, { id: pid });
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
@@ -46,6 +45,8 @@ export default function PropertyReview() {
   const storedLetter = useQuery(api.properties.getLetterHtml, { id: pid });
 
   const updateEmail = useMutation(api.properties.updateEmail);
+  const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
+  const saveGeneratedLetterHtml = useMutation(api.properties.saveGeneratedLetterHtml);
   const setFixVerification = useMutation(api.fixPhotos.setVerification);
   const updateViolation = useMutation(api.violations.update);
   const removeViolation = useMutation(api.violations.remove);
@@ -57,6 +58,10 @@ export default function PropertyReview() {
     if (property?.email) setEmailInput(property.email);
   }, [property?.email]);
 
+  useEffect(() => {
+    setInspectorNotesDraft(property?.inspectorNotes ?? "");
+  }, [property?._id, property?.inspectorNotes]);
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
@@ -67,13 +72,26 @@ export default function PropertyReview() {
     side: (photos ?? []).filter((p) => p.section === "side"),
     back: (photos ?? []).filter((p) => p.section === "back"),
   };
+  const openViolations = (violations ?? []).filter((v) => v.status === "open");
+  const priorReference = property?.previousInspectionSummary?.trim()
+    ? property.previousInspectionSummary
+    : [
+        property?.previousCitations2024?.trim(),
+        property?.previousFrontObs?.trim(),
+        property?.previousBackObs?.trim(),
+        property?.previousInspectorComments?.trim(),
+      ]
+        .filter(Boolean)
+        .join("\n");
 
   const handleGenerate = async () => {
     setGenerating(true);
     try {
       const result = await generateLetter({ propertyId: pid });
+      await saveGeneratedLetterHtml({ id: pid, html: result.html });
       setLetterHtml(result.html);
       setShowPreview(true);
+      showToast("Letter generated and saved");
     } catch (err) {
       showToast("Failed to generate letter");
     } finally {
@@ -92,10 +110,9 @@ export default function PropertyReview() {
   };
 
   const handleSend = async () => {
-    if (!letterHtml) return;
     setSending(true);
     try {
-      const result = await sendLetter({ propertyId: pid, html: letterHtml });
+      const result = await sendLetter({ propertyId: pid });
       if (result.success) {
         showToast("Letter sent successfully!");
         setShowPreview(false);
@@ -220,6 +237,88 @@ export default function PropertyReview() {
                 )}
               </div>
             )}
+
+            <div className="rounded-xl border bg-white p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold">Letter Inputs Review</h2>
+                <Button onClick={handleGenerate} disabled={generating} size="sm">
+                  {generating ? "Generating…" : "Generate Letter"}
+                </Button>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Review and edit these fields before generating. Generation saves HTML for send/export.
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div className="rounded border p-2">
+                  <p className="text-xs text-muted-foreground">Address</p>
+                  <p className="font-medium">{property.address}</p>
+                </div>
+                <div className="rounded border p-2">
+                  <p className="text-xs text-muted-foreground">Date</p>
+                  <p className="font-medium">{new Date().toLocaleDateString()}</p>
+                </div>
+                <div className="rounded border p-2">
+                  <p className="text-xs text-muted-foreground">Portal Link Token</p>
+                  <p className="font-mono text-xs break-all">{property.accessToken}</p>
+                </div>
+                <div className="rounded border p-2">
+                  <p className="text-xs text-muted-foreground">Open Violations</p>
+                  <p className="font-medium">{openViolations.length}</p>
+                </div>
+              </div>
+
+              <div className="rounded border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Inspector Notes</p>
+                  {!editingInspectorNotes ? (
+                    <Button size="sm" variant="outline" onClick={() => setEditingInspectorNotes(true)}>
+                      Edit
+                    </Button>
+                  ) : (
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={async () => {
+                          await updateInspectorNotes({ id: pid, inspectorNotes: inspectorNotesDraft });
+                          setEditingInspectorNotes(false);
+                          showToast("Inspector notes updated");
+                        }}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setInspectorNotesDraft(property.inspectorNotes ?? "");
+                          setEditingInspectorNotes(false);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {editingInspectorNotes ? (
+                  <Textarea
+                    value={inspectorNotesDraft}
+                    onChange={(e) => setInspectorNotesDraft(e.target.value)}
+                    rows={4}
+                  />
+                ) : (
+                  <p className="text-sm whitespace-pre-wrap">
+                    {property.inspectorNotes?.trim() || "No inspector notes yet."}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded border p-3 space-y-1">
+                <p className="text-sm font-medium">Prior Inspection Reference</p>
+                <p className="text-xs whitespace-pre-wrap text-muted-foreground">
+                  {priorReference || "None"}
+                </p>
+              </div>
+            </div>
 
             {/* Email */}
             <div>
@@ -435,9 +534,6 @@ export default function PropertyReview() {
             {/* Letter actions */}
             <div className="pt-2 border-t space-y-2">
               <div className="flex gap-2 flex-wrap">
-                <Button onClick={handleGenerate} disabled={generating}>
-                  {generating ? "Generating…" : "Regenerate preview"}
-                </Button>
                 <Button variant="outline" onClick={handleLoadStoredLetter} disabled={!storedLetter?.html}>
                   Load stored letter
                 </Button>
@@ -507,8 +603,16 @@ export default function PropertyReview() {
           <div className="flex gap-2 pt-2">
             <Button
               onClick={handleSend}
-              disabled={sending || !property.email}
-              title={!property.email ? "Set homeowner email first" : ""}
+              disabled={!OWNER_WORKFLOW_ENABLED || sending || !property.email || !storedLetter?.html}
+              title={
+                !OWNER_WORKFLOW_ENABLED
+                  ? "Homeowner workflow is paused"
+                  : !property.email
+                    ? "Set homeowner email first"
+                    : !storedLetter?.html
+                      ? "Generate the letter first"
+                      : ""
+              }
             >
               {sending ? "Sending..." : "Send to Homeowner"}
             </Button>
@@ -516,8 +620,12 @@ export default function PropertyReview() {
               Close
             </Button>
           </div>
-          {!property.email && (
-            <p className="text-xs text-red-500">Set a homeowner email before sending.</p>
+          {!property.email && <p className="text-xs text-red-500">Set a homeowner email before sending.</p>}
+          {!storedLetter?.html && <p className="text-xs text-red-500">Generate the letter before sending.</p>}
+          {!OWNER_WORKFLOW_ENABLED && (
+            <p className="text-xs text-amber-600">
+              Homeowner portal and sending are temporarily paused for this phase.
+            </p>
           )}
         </DialogContent>
       </Dialog>
