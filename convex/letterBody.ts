@@ -36,6 +36,8 @@ export function buildLetterHtmlSync(args: {
   publicBaseUrl: string;
   /** When true, {{violations}} is filled from open violation list HTML; otherwise from inspector notes */
   violationsOrFindingsHtml: string;
+  /** Plain text for {{inspectorFindings}}; defaults to `property.inspectorNotes` */
+  inspectorFindingsPlain?: string;
 }): string {
   const { templateContent, property, publicBaseUrl, violationsOrFindingsHtml } = args;
   const portalLink = `${publicBaseUrl.replace(/\/$/, "")}/portal/${property.accessToken}`;
@@ -65,7 +67,11 @@ export function buildLetterHtmlSync(args: {
   const priorHtml =
     priorParts.length > 0 ? priorParts.map((p) => `<p>${p}</p>`).join("\n") : "<p><em>None on file.</em></p>";
 
-  const findingsFromNotes = paragraphsFromPlainText(property.inspectorNotes ?? "");
+  const findingsPlain =
+    args.inspectorFindingsPlain !== undefined
+      ? args.inspectorFindingsPlain
+      : (property.inspectorNotes ?? "");
+  const findingsFromNotes = paragraphsFromPlainText(findingsPlain);
 
   return templateContent
     .replace(/\{\{address\}\}/g, escapeHtml(property.address))

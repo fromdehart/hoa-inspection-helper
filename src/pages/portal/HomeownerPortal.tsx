@@ -127,7 +127,7 @@ export default function HomeownerPortal() {
                   <div className="mt-3">
                     <p className="text-xs text-muted-foreground mb-1">Evidence</p>
                     <img
-                      src={evidencePhoto.publicUrl}
+                      src={evidencePhoto.publicUrl ?? evidencePhoto.thumbnailPublicUrl ?? ""}
                       alt="violation evidence"
                       className="w-full max-h-48 object-cover rounded"
                     />

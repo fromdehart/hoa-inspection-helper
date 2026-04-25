@@ -26,6 +26,7 @@ export default function PropertyReview() {
   const [letterHtml, setLetterHtml] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [addingViolation, setAddingViolation] = useState(false);
   const [newViolDesc, setNewViolDesc] = useState("");
@@ -57,6 +58,7 @@ export default function PropertyReview() {
   const createPublic = useMutation(api.violations.createPublic);
   const generateLetter = useAction(api.letters.generate);
   const sendLetter = useAction(api.letters.send);
+  const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
 
   useEffect(() => {
     if (property?.email) setEmailInput(property.email);
@@ -191,14 +193,14 @@ export default function PropertyReview() {
                             className="w-full rounded border overflow-hidden text-left transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             onClick={() =>
                               setPhotoLightbox({
-                                url: photo.publicUrl,
+                                url: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
                                 title: `${sec} photo`,
                                 caption: photo.inspectorNote?.trim() || undefined,
                               })
                             }
                           >
                             <img
-                              src={photo.publicUrl}
+                              src={photo.publicUrl ?? photo.thumbnailPublicUrl ?? ""}
                               alt={`${sec} photo`}
                               className="w-full h-32 object-cover"
                             />
@@ -219,6 +221,13 @@ export default function PropertyReview() {
 
           {/* Right: Violations + Actions */}
           <div className="space-y-4">
+            {property.priorOwnerLetterNotes2024?.trim() && (
+              <div className="rounded border bg-muted/40 p-3 text-sm space-y-1">
+                <h3 className="font-semibold text-sm">2024 letter text on file</h3>
+                <p className="text-xs whitespace-pre-wrap">{property.priorOwnerLetterNotes2024}</p>
+              </div>
+            )}
+
             {(property.previousFrontObs ||
               property.previousBackObs ||
               property.previousInspectionSummary ||
@@ -325,6 +334,41 @@ export default function PropertyReview() {
                     {property.inspectorNotes?.trim() || "No inspector notes yet."}
                   </p>
                 )}
+              </div>
+
+              <div className="rounded border p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">Letter bullets (AI)</p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={aiBulletsBusy || !property.inspectorNotes?.trim()}
+                    onClick={async () => {
+                      setAiBulletsBusy(true);
+                      try {
+                        const r = await generateAiLetterBullets({ propertyId: pid });
+                        if (r.ok) showToast("Letter bullets generated");
+                        else showToast(r.error);
+                      } catch {
+                        showToast("Failed to generate letter bullets");
+                      } finally {
+                        setAiBulletsBusy(false);
+                      }
+                    }}
+                  >
+                    {aiBulletsBusy ? "Generating…" : property.aiLetterBullets?.trim() ? "Regenerate" : "Generate"}
+                  </Button>
+                </div>
+                {property.aiLetterBulletsAt != null && (
+                  <p className="text-xs text-muted-foreground">
+                    Updated {new Date(property.aiLetterBulletsAt).toLocaleString()}
+                  </p>
+                )}
+                <p className="text-sm whitespace-pre-wrap text-muted-foreground">
+                  {property.aiLetterBullets?.trim() ||
+                    "None yet. When present, letter generation uses these bullets (instead of raw notes) for polish when there are no open violations."}
+                </p>
               </div>
 
               <div className="rounded border p-3 space-y-1">

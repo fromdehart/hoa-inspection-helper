@@ -71,15 +71,27 @@ export const generate = action({
       .map((vi, i) => `${i + 1}. [${vi.severity?.toUpperCase() ?? "N/A"}] ${vi.description}`)
       .join("\n");
 
-    const notes = property.inspectorNotes ?? "";
+    const rawInspectorNotes = property.inspectorNotes ?? "";
+    const notesForPolish =
+      openViolations.length === 0 && property.aiLetterBullets?.trim()
+        ? property.aiLetterBullets.trim()
+        : rawInspectorNotes;
+
     let slotHtml: string;
     if (openViolations.length > 0) {
       slotHtml = await polishLetterBody(violationListText, "violations");
-    } else if (notes.trim()) {
-      slotHtml = await polishLetterBody(notes, "notes");
+    } else if (notesForPolish.trim()) {
+      slotHtml = await polishLetterBody(notesForPolish, "notes");
     } else {
       slotHtml = paragraphsFromPlainText("");
     }
+
+    const inspectorFindingsPlain =
+      openViolations.length > 0
+        ? rawInspectorNotes
+        : notesForPolish.trim()
+          ? notesForPolish
+          : rawInspectorNotes;
 
     const publicBase = process.env.PUBLIC_BASE_URL ?? "http://localhost:5173";
     const html = buildLetterHtmlSync({
@@ -87,7 +99,7 @@ export const generate = action({
       property: {
         address: property.address,
         accessToken: property.accessToken,
-        inspectorNotes: notes,
+        inspectorNotes: rawInspectorNotes,
         previousFrontObs: property.previousFrontObs,
         previousBackObs: property.previousBackObs,
         previousInspectorComments: property.previousInspectorComments,
@@ -96,6 +108,7 @@ export const generate = action({
       },
       publicBaseUrl: publicBase,
       violationsOrFindingsHtml: slotHtml,
+      inspectorFindingsPlain,
     });
 
     return { html };

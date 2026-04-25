@@ -4,6 +4,7 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { ChevronDown, Loader2, Trash2 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
+import { buildInspectorThumbnailJpeg } from "@/lib/thumbnailImage";
 import { uploadPhoto } from "@/lib/uploadClient";
 import { runPool } from "@/lib/runPool";
 import {
@@ -72,6 +73,7 @@ export default function PropertyCapture() {
   const [note, setNote] = useState("");
   const [listening, setListening] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
+  const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
   const [noteSaveState, setNoteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -97,10 +99,12 @@ export default function PropertyCapture() {
   );
 
   const createPhoto = useMutation(api.photos.create);
+  const setFullImage = useMutation(api.photos.setFullImage);
   const removePhotoForInspector = useAction(api.photos.removeForInspector);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
   const updatePropertyStatus = useMutation(api.properties.updateStatus);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
+  const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
 
   useEffect(() => {
     noteHydratedForPropertyIdRef.current = null;
@@ -193,15 +197,47 @@ export default function PropertyCapture() {
         await runPool(files, UPLOAD_CONCURRENCY, async (file, index) => {
           const slotId = slotIds[index];
           try {
-            const result = await uploadPhoto(file, propertyId, UPLOAD_SECTION);
-            await createPhoto({
-              propertyId: pid,
-              section: UPLOAD_SECTION,
-              filePath: result.filePath,
-              publicUrl: result.publicUrl,
-            });
+            let photoId: Id<"photos">;
+            let queuedFullUpload = false;
+            try {
+              const thumbFile = await buildInspectorThumbnailJpeg(file);
+              const thumbResult = await uploadPhoto(thumbFile, propertyId, UPLOAD_SECTION);
+              photoId = await createPhoto({
+                propertyId: pid,
+                section: UPLOAD_SECTION,
+                thumbnailFilePath: thumbResult.filePath,
+                thumbnailPublicUrl: thumbResult.publicUrl,
+              });
+              queuedFullUpload = true;
+            } catch (thumbErr) {
+              console.warn("Thumbnail path failed, uploading full image only:", thumbErr);
+              const fullOnly = await uploadPhoto(file, propertyId, UPLOAD_SECTION);
+              photoId = await createPhoto({
+                propertyId: pid,
+                section: UPLOAD_SECTION,
+                filePath: fullOnly.filePath,
+                publicUrl: fullOnly.publicUrl,
+              });
+            }
+
             uploadStatsRef.current.done++;
             batchDone++;
+
+            if (queuedFullUpload) {
+              void (async () => {
+                try {
+                  const fullResult = await uploadPhoto(file, propertyId, UPLOAD_SECTION);
+                  await setFullImage({
+                    id: photoId,
+                    propertyId: pid,
+                    filePath: fullResult.filePath,
+                    publicUrl: fullResult.publicUrl,
+                  });
+                } catch (fullErr) {
+                  console.error("Full-size background upload failed:", fullErr);
+                }
+              })();
+            }
           } catch (err) {
             uploadStatsRef.current.fail++;
             batchFail++;
@@ -506,7 +542,7 @@ export default function PropertyCapture() {
                 onClick={() => openViewerAt(idx)}
               >
                 <img
-                  src={photo.publicUrl}
+                  src={photo.publicUrl ?? photo.thumbnailPublicUrl ?? ""}
                   alt="section photo"
                   className="w-20 h-20 object-cover rounded-xl border-2 border-white shadow-sm hover:border-sky-300 transition-colors cursor-zoom-in"
                 />
@@ -539,6 +575,50 @@ export default function PropertyCapture() {
               `Saved${lastSavedAt ? ` at ${new Date(lastSavedAt).toLocaleTimeString()}` : ""}`}
             {noteSaveState === "error" && "Autosave failed. Your notes will still save on Next House."}
           </div>
+          <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3 mt-3 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-gray-800">Letter bullets (AI)</p>
+              <button
+                type="button"
+                disabled={aiBulletsBusy || !note.trim()}
+                className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-violet-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-violet-700 transition-colors"
+                onClick={async () => {
+                  setAiBulletsBusy(true);
+                  try {
+                    await updateInspectorNotes({ id: pid, inspectorNotes: note });
+                    lastPersistedNoteRef.current = note;
+                    const r = await generateAiLetterBullets({ propertyId: pid });
+                    if (!r.ok) alert(r.error);
+                  } catch (e) {
+                    console.error(e);
+                    alert("Could not generate letter bullets.");
+                  } finally {
+                    setAiBulletsBusy(false);
+                  }
+                }}
+              >
+                {aiBulletsBusy ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                    Generating…
+                  </span>
+                ) : property?.aiLetterBullets?.trim() ? (
+                  "Regenerate"
+                ) : (
+                  "Generate"
+                )}
+              </button>
+            </div>
+            {property?.aiLetterBulletsAt != null && (
+              <p className="text-xs text-gray-500">
+                Updated {new Date(property.aiLetterBulletsAt).toLocaleString()}
+              </p>
+            )}
+            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+              {property?.aiLetterBullets?.trim() ||
+                "Optional: turn your raw notes into HOA-style bullets for letters (when there are no violation records)."}
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button
               type="button"
@@ -554,9 +634,15 @@ export default function PropertyCapture() {
           </div>
         </div>
 
-        {priorBlocks.length > 0 && (
+        {(priorBlocks.length > 0 || property.priorOwnerLetterNotes2024?.trim()) && (
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-3">
             <h2 className="font-bold text-gray-800 flex items-center gap-2">📋 Last inspection</h2>
+            {property.priorOwnerLetterNotes2024?.trim() && (
+              <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3">
+                <p className="text-xs font-semibold text-amber-900/80 mb-1">2024 letter text on file</p>
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">{property.priorOwnerLetterNotes2024}</p>
+              </div>
+            )}
             {priorBlocks.map((b, i) => (
               <div key={`${b.label}-${i}`}>
                 {b.label ? (
@@ -688,8 +774,13 @@ export default function PropertyCapture() {
               </div>
             </div>
             <div className="relative">
+              {!selectedPhoto.publicUrl && selectedPhoto.thumbnailPublicUrl ? (
+                <p className="text-center text-amber-200 text-sm mb-2">
+                  Full resolution still uploading — showing preview. Open again in a moment for the original file.
+                </p>
+              ) : null}
               <img
-                src={selectedPhoto.publicUrl}
+                src={selectedPhoto.publicUrl ?? selectedPhoto.thumbnailPublicUrl ?? ""}
                 alt="full size section photo"
                 className="w-full max-h-[75vh] object-contain rounded-xl bg-black"
               />

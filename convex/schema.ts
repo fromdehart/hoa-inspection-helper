@@ -31,6 +31,11 @@ export default defineSchema({
     previousInspectorComments: v.optional(v.string()),
     previousInspectionSummary: v.optional(v.string()),
     inspectorNotes: v.optional(v.string()),
+    /** Archival text from 2024 owner letters (Word import); not exposed on homeowner portal. */
+    priorOwnerLetterNotes2024: v.optional(v.string()),
+    /** AI-generated HOA-style bullet list for letters; not exposed on homeowner portal. */
+    aiLetterBullets: v.optional(v.string()),
+    aiLetterBulletsAt: v.optional(v.number()),
     generatedLetterHtml: v.optional(v.string()),
     generatedLetterAt: v.optional(v.number()),
   })
@@ -45,8 +50,12 @@ export default defineSchema({
       v.literal("side"),
       v.literal("back"),
     ),
-    filePath: v.string(),
-    publicUrl: v.string(),
+    /** Full-resolution image on the upload VPS (set after background upload when using inspector thumb-first flow). */
+    filePath: v.optional(v.string()),
+    publicUrl: v.optional(v.string()),
+    /** Smaller JPEG for lists; inspector uploads set this first, then `publicUrl` when the full file finishes. */
+    thumbnailFilePath: v.optional(v.string()),
+    thumbnailPublicUrl: v.optional(v.string()),
     uploadedAt: v.number(),
     inspectorNote: v.optional(v.string()),
     analysisStatus: v.union(

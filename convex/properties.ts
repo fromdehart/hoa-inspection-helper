@@ -47,7 +47,13 @@ export const getByToken = query({
       .withIndex("by_token", (q) => q.eq("accessToken", args.token))
       .first();
     if (!doc) return null;
-    const { accessToken: _accessToken, ...safe } = doc;
+    const {
+      accessToken: _accessToken,
+      priorOwnerLetterNotes2024: _prior2024,
+      aiLetterBullets: _aiBullets,
+      aiLetterBulletsAt: _aiBulletsAt,
+      ...safe
+    } = doc;
     return safe;
   },
 });
@@ -233,6 +239,62 @@ export const bulkUpsertSummer2025 = mutation({
   },
 });
 
+const priorLetterRowValidator = v.object({
+  streetName: v.string(),
+  houseNumber: v.number(),
+  priorOwnerLetterNotes2024: v.string(),
+});
+
+/** Patch archival 2024 letter notes from Word import (existing properties only). */
+export const bulkPatchPriorOwnerLetterNotes2024 = mutation({
+  args: { rows: v.array(priorLetterRowValidator) },
+  handler: async (ctx, args) => {
+    let patched = 0;
+    let skippedNoStreet = 0;
+    let skippedNoProperty = 0;
+    for (const row of args.rows) {
+      const streetDoc = await ctx.db
+        .query("streets")
+        .withIndex("by_name", (q) => q.eq("name", row.streetName))
+        .first();
+      if (!streetDoc) {
+        skippedNoStreet++;
+        continue;
+      }
+      const onStreet = await ctx.db
+        .query("properties")
+        .withIndex("by_street", (q) => q.eq("streetId", streetDoc._id))
+        .collect();
+      const existing = onStreet.find((p) => p.houseNumber === row.houseNumber);
+      if (!existing) {
+        skippedNoProperty++;
+        continue;
+      }
+      await ctx.db.patch(existing._id, {
+        priorOwnerLetterNotes2024: row.priorOwnerLetterNotes2024,
+      });
+      patched++;
+    }
+    return {
+      patched,
+      skippedNoStreet,
+      skippedNoProperty,
+      total: args.rows.length,
+    };
+  },
+});
+
+export const patchAiLetterBullets = internalMutation({
+  args: { id: v.id("properties"), aiLetterBullets: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      aiLetterBullets: args.aiLetterBullets,
+      aiLetterBulletsAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 export const updateInspectorNotes = mutation({
   args: { id: v.id("properties"), inspectorNotes: v.string() },
   handler: async (ctx, args) => {
@@ -298,13 +360,16 @@ export const completeHouseAndSaveLetter = mutation({
       previousCitations2024: property.previousCitations2024,
     };
 
-    const findingsHtml = paragraphsFromPlainText(args.inspectorNotes);
+    const plainForLetter =
+      property.aiLetterBullets?.trim() || args.inspectorNotes;
+    const findingsHtml = paragraphsFromPlainText(plainForLetter);
     const publicBase = process.env.PUBLIC_BASE_URL ?? "http://localhost:5173";
     const html = buildLetterHtmlSync({
       templateContent,
       property: merged,
       publicBaseUrl: publicBase,
       violationsOrFindingsHtml: findingsHtml,
+      inspectorFindingsPlain: plainForLetter,
     });
 
     await ctx.db.patch(args.id, {

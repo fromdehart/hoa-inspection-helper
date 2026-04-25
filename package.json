@@ -14,7 +14,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "import:summer2025": "tsx scripts/import-summer-2025.ts"
+    "import:summer2025": "tsx scripts/import-summer-2025.ts",
+    "import:real-notes": "tsx scripts/import-real-notes-docx.ts",
+    "build:fewshot-bullets": "tsx scripts/build-letter-bullet-fewshot.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.6",
@@ -59,6 +61,7 @@
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
+    "fast-xml-parser": "^4.5.6",
     "globals": "^15.15.0",
     "tailwindcss": "^3.4.17",
     "terser": "^5.44.0",

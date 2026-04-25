@@ -37,8 +37,8 @@ export const listForZipExport = query({
       if (!street) continue;
       out.push({
         photoId: photo._id,
-        publicUrl: photo.publicUrl,
-        filePath: photo.filePath,
+        publicUrl: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
+        filePath: photo.filePath ?? photo.thumbnailFilePath ?? "",
         section: photo.section,
         uploadedAt: photo.uploadedAt,
         houseNumber: property.houseNumber,
@@ -63,8 +63,8 @@ export const getById = internalQuery({
   },
 });
 
-/** Used by `removeForInspector` action before DB delete (to get `filePath` for the upload VPS). */
-export const getFilePathForRemove = internalQuery({
+/** Relative paths on the upload VPS to delete (full + thumbnail when both exist). */
+export const getUploadPathsForRemove = internalQuery({
   args: { id: v.id("photos"), propertyId: v.id("properties") },
   handler: async (ctx, args) => {
     const photo = await ctx.db.get(args.id);
@@ -72,7 +72,12 @@ export const getFilePathForRemove = internalQuery({
     if (photo.propertyId !== args.propertyId) {
       throw new Error("Photo does not belong to this property.");
     }
-    return { filePath: photo.filePath };
+    const paths: string[] = [];
+    if (photo.filePath) paths.push(photo.filePath);
+    if (photo.thumbnailFilePath && photo.thumbnailFilePath !== photo.filePath) {
+      paths.push(photo.thumbnailFilePath);
+    }
+    return { paths };
   },
 });
 
@@ -102,23 +107,56 @@ export const create = mutation({
   args: {
     propertyId: v.id("properties"),
     section: v.union(v.literal("front"), v.literal("side"), v.literal("back")),
-    filePath: v.string(),
-    publicUrl: v.string(),
+    filePath: v.optional(v.string()),
+    publicUrl: v.optional(v.string()),
+    thumbnailFilePath: v.optional(v.string()),
+    thumbnailPublicUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const hasFull = !!(args.filePath && args.publicUrl);
+    const hasThumb = !!(args.thumbnailFilePath && args.thumbnailPublicUrl);
+    if (!hasFull && !hasThumb) {
+      throw new Error("Provide full-size and/or thumbnail paths.");
+    }
+
     const photoId = await ctx.db.insert("photos", {
       propertyId: args.propertyId,
       section: args.section,
-      filePath: args.filePath,
-      publicUrl: args.publicUrl,
+      ...(hasFull ? { filePath: args.filePath, publicUrl: args.publicUrl } : {}),
+      ...(hasThumb
+        ? { thumbnailFilePath: args.thumbnailFilePath, thumbnailPublicUrl: args.thumbnailPublicUrl }
+        : {}),
       uploadedAt: Date.now(),
-      analysisStatus: "done",
+      analysisStatus: hasFull ? "done" : "pending",
     });
     const property = await ctx.db.get(args.propertyId);
     if (property?.status === "notStarted") {
       await ctx.db.patch(args.propertyId, { status: "inProgress" });
     }
     return photoId;
+  },
+});
+
+/** After full-size file finishes uploading to the VPS, attach it to an existing thumb-first photo row. */
+export const setFullImage = mutation({
+  args: {
+    id: v.id("photos"),
+    propertyId: v.id("properties"),
+    filePath: v.string(),
+    publicUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const p = await ctx.db.get(args.id);
+    if (!p) throw new Error("Photo not found.");
+    if (p.propertyId !== args.propertyId) {
+      throw new Error("Photo does not belong to this property.");
+    }
+    await ctx.db.patch(args.id, {
+      filePath: args.filePath,
+      publicUrl: args.publicUrl,
+      analysisStatus: "done",
+    });
+    return null;
   },
 });
 
@@ -140,7 +178,7 @@ export const removeForInspector = action({
     propertyId: v.id("properties"),
   },
   handler: async (ctx, args) => {
-    const { filePath } = await ctx.runQuery(internal.photos.getFilePathForRemove, args);
+    const { paths } = await ctx.runQuery(internal.photos.getUploadPathsForRemove, args);
     await ctx.runMutation(internal.photos.removeRecord, args);
 
     const base = process.env.UPLOAD_SERVER_URL;
@@ -153,18 +191,19 @@ export const removeForInspector = action({
     }
 
     const url = `${base.replace(/\/$/, "")}/api/delete-file`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Upload-Delete-Token": token,
-      },
-      body: JSON.stringify({ filePath }),
-    });
-
-    if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      throw new Error(`Could not delete file on upload server (${res.status}): ${msg}`.trim());
+    for (const filePath of paths) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Upload-Delete-Token": token,
+        },
+        body: JSON.stringify({ filePath }),
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        throw new Error(`Could not delete file on upload server (${res.status}): ${msg}`.trim());
+      }
     }
   },
 });
