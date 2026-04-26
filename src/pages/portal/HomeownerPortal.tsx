@@ -3,15 +3,8 @@ import { useParams } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { uploadPhoto } from "@/lib/uploadClient";
-
-const SEV_COLORS: Record<string, string> = {
-  high: "bg-red-50 border border-red-200",
-  medium: "bg-amber-50 border border-amber-200",
-  low: "bg-green-50 border border-green-200",
-};
 
 const VERIFICATION_UI: Record<
   string,
@@ -25,18 +18,10 @@ const VERIFICATION_UI: Record<
 
 export default function HomeownerPortal() {
   const { token } = useParams<{ token: string }>();
-  const [uploadingForViolationId, setUploadingForViolationId] = useState<string | null>(null);
-  const fileInputsRef = useRef<Map<string, HTMLInputElement>>(new Map());
+  const [uploadingFixPhoto, setUploadingFixPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const property = useQuery(api.properties.getByToken, { token: token ?? "" });
-  const violations = useQuery(
-    api.violations.listByProperty,
-    property ? { propertyId: property._id as Id<"properties"> } : "skip",
-  );
-  const photos = useQuery(
-    api.photos.listByProperty,
-    property ? { propertyId: property._id as Id<"properties"> } : "skip",
-  );
   const fixPhotos = useQuery(
     api.fixPhotos.listByProperty,
     property ? { propertyId: property._id as Id<"properties"> } : "skip",
@@ -66,23 +51,19 @@ export default function HomeownerPortal() {
 
   const pid = property._id as Id<"properties">;
 
-  const handleFixUpload = async (
-    violationId: Id<"violations">,
-    file: File,
-  ) => {
-    setUploadingForViolationId(violationId);
+  const handleFixUpload = async (file: File) => {
+    setUploadingFixPhoto(true);
     try {
       const result = await uploadPhoto(file, pid, "fix");
       await createFixPhoto({
         propertyId: pid,
-        violationId,
         filePath: result.filePath,
         publicUrl: result.publicUrl,
       });
     } catch (err) {
       alert("Upload failed: " + String(err));
     } finally {
-      setUploadingForViolationId(null);
+      setUploadingFixPhoto(false);
     }
   };
 
@@ -94,111 +75,68 @@ export default function HomeownerPortal() {
         <p className="text-sky-200 text-sm text-center mt-1">HOA inspection results</p>
         <div className="flex justify-center mt-3">
           <span className="inline-flex items-center rounded-full bg-white/20 text-white text-xs font-semibold px-3 py-1 border border-white/30">
-            {violations?.length ?? 0} violation(s)
+            {(fixPhotos ?? []).length} submitted fix photo(s)
           </span>
         </div>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
+        <div className="rounded-2xl p-4 shadow-sm border border-gray-100 bg-white mb-4">
+          <p className="font-medium">Upload a fix photo</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Submit updated exterior photos for HOA review.
+          </p>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            ref={fileInputRef}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleFixUpload(file);
+              e.target.value = "";
+            }}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={uploadingFixPhoto}
+            onClick={() => fileInputRef.current?.click()}
+            className="mt-3"
+          >
+            {uploadingFixPhoto ? "Uploading..." : "Upload Fix Photo"}
+          </Button>
+        </div>
+
         <div className="space-y-4">
-          {(violations ?? []).map((v) => {
-            const evidencePhoto = (photos ?? []).find((p) => p._id === v.photoId);
-            const fixPhotosForV = (fixPhotos ?? []).filter((fp) => fp.violationId === v._id);
-            const isUploading = uploadingForViolationId === v._id;
-
+          {(fixPhotos ?? []).map((fp) => {
+            const ui = VERIFICATION_UI[fp.verificationStatus] ?? VERIFICATION_UI.needsReview;
             return (
-              <div
-                key={v._id}
-                className={`rounded-2xl p-4 shadow-sm border border-gray-100 bg-white ${SEV_COLORS[v.severity ?? "low"] ?? "border"}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="font-medium">{v.description}</p>
-                    <div className="flex gap-2 mt-1">
-                      <Badge variant="outline" className="text-xs">
-                        {v.severity ?? "N/A"}
-                      </Badge>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Evidence photo */}
-                {evidencePhoto && (
-                  <div className="mt-3">
-                    <p className="text-xs text-muted-foreground mb-1">Evidence</p>
-                    <img
-                      src={evidencePhoto.publicUrl ?? evidencePhoto.thumbnailPublicUrl ?? ""}
-                      alt="violation evidence"
-                      className="w-full max-h-48 object-cover rounded"
-                    />
-                  </div>
-                )}
-
-                {/* Fix photos */}
-                {fixPhotosForV.length > 0 && (
-                  <div className="mt-3 space-y-2">
-                    <p className="text-xs text-muted-foreground font-medium">Your submissions</p>
-                    {fixPhotosForV.map((fp) => {
-                      const ui = VERIFICATION_UI[fp.verificationStatus];
-                      return (
-                        <div key={fp._id} className="flex items-start gap-3">
-                          <img
-                            src={fp.publicUrl}
-                            alt="fix photo"
-                            className="w-16 h-16 object-cover rounded border"
-                          />
-                          <div>
-                            <Badge
-                              variant={ui.color as any}
-                              className="text-xs"
-                            >
-                              {ui.label}
-                            </Badge>
-                            {fp.verificationNote && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {fp.verificationNote}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* Upload fix photo */}
-                <div className="mt-3">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    ref={(el) => {
-                      if (el) fileInputsRef.current.set(v._id, el);
-                    }}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleFixUpload(v._id as Id<"violations">, file);
-                      e.target.value = "";
-                    }}
+              <div key={fp._id} className="rounded-2xl p-4 shadow-sm border border-gray-100 bg-white">
+                <div className="flex items-start gap-3">
+                  <img
+                    src={fp.publicUrl}
+                    alt="fix photo"
+                    className="w-20 h-20 object-cover rounded border"
                   />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={isUploading}
-                    onClick={() => fileInputsRef.current.get(v._id)?.click()}
-                  >
-                    {isUploading ? "Uploading..." : "Upload Fix Photo"}
-                  </Button>
+                  <div>
+                    <p className="text-sm font-medium">{ui.label}</p>
+                    {fp.verificationNote && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {fp.verificationNote}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             );
           })}
 
-          {(violations ?? []).length === 0 && violations !== undefined && (
+          {(fixPhotos ?? []).length === 0 && fixPhotos !== undefined && (
             <div className="text-center py-12 text-muted-foreground">
-              <p className="text-lg">No violations on record</p>
-              <p className="text-sm mt-1">Your property is in good standing.</p>
+              <p className="text-lg">No fix photos submitted yet</p>
+              <p className="text-sm mt-1">Upload a photo above to send an update.</p>
             </div>
           )}
         </div>

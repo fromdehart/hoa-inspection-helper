@@ -22,14 +22,12 @@ export const getById = internalQuery({
 export const create = mutation({
   args: {
     propertyId: v.id("properties"),
-    violationId: v.optional(v.id("violations")),
     filePath: v.string(),
     publicUrl: v.string(),
   },
   handler: async (ctx, args) => {
     const fixPhotoId = await ctx.db.insert("fixPhotos", {
       propertyId: args.propertyId,
-      violationId: args.violationId,
       filePath: args.filePath,
       publicUrl: args.publicUrl,
       uploadedAt: Date.now(),

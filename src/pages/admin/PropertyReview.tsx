@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -6,16 +6,14 @@ import { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-const SEV_COLORS: Record<string, string> = {
-  high: "bg-red-100 border-l-4 border-red-500",
-  medium: "bg-amber-50 border-l-4 border-amber-500",
-  low: "bg-green-50 border-l-4 border-green-500",
-};
 const OWNER_WORKFLOW_ENABLED = false;
+
+type AdminFieldsDraft = {
+  previousInspectionSummary: string;
+  priorOwnerLetterNotes2024: string;
+};
 
 export default function PropertyReview() {
   const navigate = useNavigate();
@@ -23,20 +21,23 @@ export default function PropertyReview() {
   const pid = propertyId as Id<"properties">;
 
   const [emailInput, setEmailInput] = useState("");
+  const [homeownerNamesInput, setHomeownerNamesInput] = useState("");
+  const [statusInput, setStatusInput] = useState<"notStarted" | "inProgress" | "complete">("notStarted");
+  const [adminFieldsDraft, setAdminFieldsDraft] = useState<AdminFieldsDraft>({
+    previousInspectionSummary: "",
+    priorOwnerLetterNotes2024: "",
+  });
   const [letterHtml, setLetterHtml] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
   const [sending, setSending] = useState(false);
-  const [addingViolation, setAddingViolation] = useState(false);
-  const [newViolDesc, setNewViolDesc] = useState("");
-  const [newViolSeverity, setNewViolSeverity] = useState<"low" | "medium" | "high">("medium");
   const [toast, setToast] = useState("");
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDesc, setEditDesc] = useState("");
-  const [editNote, setEditNote] = useState("");
   const [editingInspectorNotes, setEditingInspectorNotes] = useState(false);
   const [inspectorNotesDraft, setInspectorNotesDraft] = useState("");
+  const [aiBulletsDraft, setAiBulletsDraft] = useState("");
+  const [aiBulletsSaveState, setAiBulletsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [aiBulletsLastSavedAt, setAiBulletsLastSavedAt] = useState<number | null>(null);
   const [photoLightbox, setPhotoLightbox] = useState<{
     url: string;
     title: string;
@@ -45,51 +46,118 @@ export default function PropertyReview() {
 
   const property = useQuery(api.properties.get, { id: pid });
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
-  const violations = useQuery(api.violations.listByProperty, { propertyId: pid });
   const fixPhotos = useQuery(api.fixPhotos.listByProperty, { propertyId: pid });
   const storedLetter = useQuery(api.properties.getLetterHtml, { id: pid });
 
   const updateEmail = useMutation(api.properties.updateEmail);
+  const updateHomeownerNames = useMutation(api.properties.updateHomeownerNames);
+  const updateStatus = useMutation(api.properties.updateStatus);
+  const updateAdminPropertyFields = useMutation(api.properties.updateAdminPropertyFields);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
   const saveGeneratedLetterHtml = useMutation(api.properties.saveGeneratedLetterHtml);
   const setFixVerification = useMutation(api.fixPhotos.setVerification);
-  const updateViolation = useMutation(api.violations.update);
-  const removeViolation = useMutation(api.violations.remove);
-  const createPublic = useMutation(api.violations.createPublic);
   const generateLetter = useAction(api.letters.generate);
   const sendLetter = useAction(api.letters.send);
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
+  const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
+  const aiBulletsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiBulletsHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
+  const aiBulletsInitializedRef = useRef(false);
+  const lastPersistedAiBulletsRef = useRef("");
 
   useEffect(() => {
     if (property?.email) setEmailInput(property.email);
+    else setEmailInput("");
   }, [property?.email]);
+
+  useEffect(() => {
+    setHomeownerNamesInput(property?.homeownerNames ?? "");
+  }, [property?.homeownerNames]);
+
+  useEffect(() => {
+    if (!property?.status) return;
+    setStatusInput(property.status);
+  }, [property?.status]);
+
+  useEffect(() => {
+    setAdminFieldsDraft({
+      previousInspectionSummary: property?.previousInspectionSummary ?? "",
+      priorOwnerLetterNotes2024: property?.priorOwnerLetterNotes2024 ?? "",
+    });
+  }, [
+    property?.previousInspectionSummary,
+    property?.priorOwnerLetterNotes2024,
+  ]);
 
   useEffect(() => {
     setInspectorNotesDraft(property?.inspectorNotes ?? "");
   }, [property?._id, property?.inspectorNotes]);
+
+  useEffect(() => {
+    aiBulletsHydratedForPropertyIdRef.current = null;
+    aiBulletsInitializedRef.current = false;
+    if (aiBulletsAutosaveTimerRef.current) {
+      clearTimeout(aiBulletsAutosaveTimerRef.current);
+      aiBulletsAutosaveTimerRef.current = null;
+    }
+  }, [pid]);
+
+  useEffect(() => {
+    if (!property || property._id !== pid) return;
+    if (aiBulletsHydratedForPropertyIdRef.current === pid) return;
+    aiBulletsHydratedForPropertyIdRef.current = pid;
+
+    const initialBullets = property.aiLetterBullets ?? "";
+    setAiBulletsDraft(initialBullets);
+    lastPersistedAiBulletsRef.current = initialBullets;
+    aiBulletsInitializedRef.current = true;
+    setAiBulletsSaveState("idle");
+    setAiBulletsLastSavedAt(property.aiLetterBulletsAt ?? null);
+  }, [pid, property]);
+
+  useEffect(() => {
+    if (!property || property._id !== pid) return;
+    if (!aiBulletsInitializedRef.current) return;
+    const serverBullets = property.aiLetterBullets ?? "";
+    const localIsDirty = aiBulletsDraft !== lastPersistedAiBulletsRef.current;
+    if (!localIsDirty && serverBullets !== lastPersistedAiBulletsRef.current) {
+      setAiBulletsDraft(serverBullets);
+      lastPersistedAiBulletsRef.current = serverBullets;
+      setAiBulletsLastSavedAt(property.aiLetterBulletsAt ?? Date.now());
+      setAiBulletsSaveState("saved");
+    }
+  }, [pid, property?._id, property?.aiLetterBullets, property?.aiLetterBulletsAt, aiBulletsDraft]);
+
+  useEffect(() => {
+    return () => {
+      if (aiBulletsAutosaveTimerRef.current) clearTimeout(aiBulletsAutosaveTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!aiBulletsInitializedRef.current) return;
+    if (aiBulletsDraft === lastPersistedAiBulletsRef.current) return;
+
+    if (aiBulletsAutosaveTimerRef.current) clearTimeout(aiBulletsAutosaveTimerRef.current);
+    aiBulletsAutosaveTimerRef.current = setTimeout(async () => {
+      try {
+        setAiBulletsSaveState("saving");
+        await updateAiLetterBullets({ id: pid, aiLetterBullets: aiBulletsDraft });
+        lastPersistedAiBulletsRef.current = aiBulletsDraft;
+        setAiBulletsLastSavedAt(Date.now());
+        setAiBulletsSaveState("saved");
+      } catch {
+        setAiBulletsSaveState("error");
+      }
+    }, 1200);
+  }, [aiBulletsDraft, pid, updateAiLetterBullets]);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
   };
 
-  const photosBySection = {
-    front: (photos ?? []).filter((p) => p.section === "front"),
-    side: (photos ?? []).filter((p) => p.section === "side"),
-    back: (photos ?? []).filter((p) => p.section === "back"),
-  };
-  const openViolations = (violations ?? []).filter((v) => v.status === "open");
-  const priorReference = property?.previousInspectionSummary?.trim()
-    ? property.previousInspectionSummary
-    : [
-        property?.previousCitations2024?.trim(),
-        property?.previousFrontObs?.trim(),
-        property?.previousBackObs?.trim(),
-        property?.previousInspectorComments?.trim(),
-      ]
-        .filter(Boolean)
-        .join("\n");
-
+  const allPhotos = photos ?? [];
   const handleGenerate = async () => {
     setGenerating(true);
     try {
@@ -130,11 +198,18 @@ export default function PropertyReview() {
     }
   };
 
-  const handleAddViolation = async () => {
-    if (!newViolDesc.trim()) return;
-    await createPublic({ propertyId: pid, description: newViolDesc, severity: newViolSeverity });
-    setNewViolDesc("");
-    setAddingViolation(false);
+  const handleSavePropertyDetails = async () => {
+    await Promise.all([
+      updateHomeownerNames({ id: pid, homeownerNames: homeownerNamesInput }),
+      updateEmail({ id: pid, email: emailInput }),
+      updateStatus({ id: pid, status: statusInput }),
+      updateAdminPropertyFields({
+        id: pid,
+        previousInspectionSummary: adminFieldsDraft.previousInspectionSummary,
+        priorOwnerLetterNotes2024: adminFieldsDraft.priorOwnerLetterNotes2024,
+      }),
+    ]);
+    showToast("Property details saved");
   };
 
   if (!property) {
@@ -169,128 +244,111 @@ export default function PropertyReview() {
       )}
 
       <div className="max-w-6xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left: Photos */}
-          <div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left: Photos + editable fields */}
+          <div className="lg:col-span-1 space-y-4">
             <h2 className="text-lg font-semibold mb-3">Photos</h2>
-            <div className="space-y-6">
-              {(["front", "side", "back"] as const).map((sec) => (
-                <div key={sec}>
-                  <h3 className="text-sm font-semibold text-foreground mb-2 capitalize">
-                    {sec}{" "}
-                    <span className="font-normal text-muted-foreground">
-                      ({photosBySection[sec].length})
-                    </span>
-                  </h3>
-                  {photosBySection[sec].length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No photos yet</p>
-                  ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                      {photosBySection[sec].map((photo) => (
-                        <div key={photo._id} className="relative min-w-0">
-                          <button
-                            type="button"
-                            className="w-full rounded border overflow-hidden text-left transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                            onClick={() =>
-                              setPhotoLightbox({
-                                url: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
-                                title: `${sec} photo`,
-                                caption: photo.inspectorNote?.trim() || undefined,
-                              })
-                            }
-                          >
-                            <img
-                              src={photo.publicUrl ?? photo.thumbnailPublicUrl ?? ""}
-                              alt={`${sec} photo`}
-                              className="w-full h-32 object-cover"
-                            />
-                          </button>
-                          {photo.inspectorNote && (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                              {photo.inspectorNote}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Right: Violations + Actions */}
-          <div className="space-y-4">
-            {property.priorOwnerLetterNotes2024?.trim() && (
-              <div className="rounded border bg-muted/40 p-3 text-sm space-y-1">
-                <h3 className="font-semibold text-sm">2024 letter text on file</h3>
-                <p className="text-xs whitespace-pre-wrap">{property.priorOwnerLetterNotes2024}</p>
-              </div>
-            )}
-
-            {(property.previousFrontObs ||
-              property.previousBackObs ||
-              property.previousInspectionSummary ||
-              property.previousInspectorComments) && (
-              <div className="rounded border bg-muted/40 p-3 text-sm space-y-1">
-                <h3 className="font-semibold text-sm">Prior inspection (imported)</h3>
-                {property.previousInspectionSummary && (
-                  <p className="whitespace-pre-wrap text-xs">{property.previousInspectionSummary}</p>
-                )}
-                {!property.previousInspectionSummary && (
-                  <>
-                    {property.previousFrontObs && (
-                      <p>
-                        <span className="font-medium">Front: </span>
-                        {property.previousFrontObs}
+            {allPhotos.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No photos yet</p>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-2 gap-2">
+                {allPhotos.map((photo, idx) => (
+                  <div key={photo._id} className="relative min-w-0">
+                    <button
+                      type="button"
+                      className="w-full rounded border overflow-hidden text-left transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() =>
+                        setPhotoLightbox({
+                          url: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
+                          title: `Photo ${idx + 1}`,
+                          caption: photo.inspectorNote?.trim() || undefined,
+                        })
+                      }
+                    >
+                      <img
+                        src={photo.publicUrl ?? photo.thumbnailPublicUrl ?? ""}
+                        alt={`Inspection photo ${idx + 1}`}
+                        className="w-full h-32 object-cover"
+                      />
+                    </button>
+                    {photo.inspectorNote && (
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                        {photo.inspectorNote}
                       </p>
                     )}
-                    {property.previousBackObs && (
-                      <p>
-                        <span className="font-medium">Back: </span>
-                        {property.previousBackObs}
-                      </p>
-                    )}
-                    {property.previousInspectorComments && (
-                      <p>
-                        <span className="font-medium">Comments: </span>
-                        {property.previousInspectorComments}
-                      </p>
-                    )}
-                  </>
-                )}
+                  </div>
+                ))}
               </div>
             )}
 
             <div className="rounded-xl border bg-white p-4 space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold">Letter Inputs Review</h2>
-                <Button onClick={handleGenerate} disabled={generating} size="sm">
+                <h2 className="text-lg font-semibold">Editable Property Fields</h2>
+                <Button size="sm" onClick={handleSavePropertyDetails}>Save All</Button>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Homeowner Name(s)</p>
+                  <Input
+                    value={homeownerNamesInput}
+                    onChange={(e) => setHomeownerNamesInput(e.target.value)}
+                    placeholder="e.g. Jane and John Doe"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Homeowner Email</p>
+                  <Input
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="homeowner@example.com"
+                    type="email"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Property Status</p>
+                  <Select
+                    value={statusInput}
+                    onValueChange={(v) => setStatusInput(v as "notStarted" | "inProgress" | "complete")}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="notStarted">Not started</SelectItem>
+                      <SelectItem value="inProgress">In progress</SelectItem>
+                      <SelectItem value="complete">Complete</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Portal Link Token</p>
+                  <Input value={property.accessToken} readOnly className="font-mono text-xs" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: letter + inspection content */}
+          <div className="space-y-4 lg:col-span-2">
+            <div className="rounded-xl border bg-white p-4 space-y-3">
+              <h2 className="text-lg font-semibold">Letter Actions</h2>
+              <div className="flex gap-2 flex-wrap">
+                <Button onClick={handleGenerate} disabled={generating}>
                   {generating ? "Generating…" : "Generate Letter"}
                 </Button>
+                <Button variant="outline" onClick={handleLoadStoredLetter} disabled={!storedLetter?.html}>
+                  View Letter
+                </Button>
               </div>
-              <div className="text-xs text-muted-foreground">
-                Review and edit these fields before generating. Generation saves HTML for send/export.
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                <div className="rounded border p-2">
-                  <p className="text-xs text-muted-foreground">Address</p>
-                  <p className="font-medium">{property.address}</p>
-                </div>
-                <div className="rounded border p-2">
-                  <p className="text-xs text-muted-foreground">Date</p>
-                  <p className="font-medium">{new Date().toLocaleDateString()}</p>
-                </div>
-                <div className="rounded border p-2">
-                  <p className="text-xs text-muted-foreground">Portal Link Token</p>
-                  <p className="font-mono text-xs break-all">{property.accessToken}</p>
-                </div>
-                <div className="rounded border p-2">
-                  <p className="text-xs text-muted-foreground">Open Violations</p>
-                  <p className="font-medium">{openViolations.length}</p>
-                </div>
-              </div>
+              {storedLetter?.generatedLetterAt && (
+                <p className="text-xs text-muted-foreground">
+                  Last generated: {new Date(storedLetter.generatedLetterAt).toLocaleString()}
+                </p>
+              )}
+            </div>
 
+            <div className="rounded-xl border bg-white p-4 space-y-3">
+              <h2 className="text-lg font-semibold">Inspection Content</h2>
               <div className="rounded border p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium">Inspector Notes</p>
@@ -338,7 +396,7 @@ export default function PropertyReview() {
 
               <div className="rounded border p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium">Summarized Inspedction Notes</p>
+                  <p className="text-sm font-medium">Summarized Inspection Notes</p>
                   <Button
                     type="button"
                     size="sm"
@@ -349,7 +407,7 @@ export default function PropertyReview() {
                       try {
                         const r = await generateAiLetterBullets({ propertyId: pid });
                         if (r.ok) showToast("Inspection notes generated");
-                        else showToast(r.error);
+                        else showToast("error" in r ? r.error : "Failed to generate inspection notes");
                       } catch {
                         showToast("Failed to generate inspection notes");
                       } finally {
@@ -360,270 +418,44 @@ export default function PropertyReview() {
                     {aiBulletsBusy ? "Generating…" : property.aiLetterBullets?.trim() ? "Regenerate" : "Generate"}
                   </Button>
                 </div>
-                {property.aiLetterBulletsAt != null && (
-                  <p className="text-xs text-muted-foreground">
-                    Updated {new Date(property.aiLetterBulletsAt).toLocaleString()}
-                  </p>
-                )}
-                <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-                  {property.aiLetterBullets?.trim() ||
-                    "None yet. When present, letter generation uses these bullets (instead of raw notes) for polish when there are no open violations."}
-                </p>
-              </div>
-
-              <div className="rounded border p-3 space-y-1">
-                <p className="text-sm font-medium">Prior Inspection Reference</p>
-                <p className="text-xs whitespace-pre-wrap text-muted-foreground">
-                  {priorReference || "None"}
-                </p>
-              </div>
-            </div>
-
-            {/* Email */}
-            <div>
-              <h2 className="text-lg font-semibold mb-2">Homeowner Email</h2>
-              <div className="flex gap-2">
-                <Input
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="homeowner@example.com"
-                  type="email"
+                <Textarea
+                  value={aiBulletsDraft}
+                  onChange={(e) => setAiBulletsDraft(e.target.value)}
+                  rows={5}
+                  className="text-sm"
+                  placeholder="Generate summarized inspection notes, then edit as needed."
                 />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => updateEmail({ id: pid, email: emailInput })}
-                >
-                  Save
-                </Button>
-              </div>
-            </div>
-
-            {/* Violations */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-lg font-semibold">Violations ({violations?.length ?? 0})</h2>
-                <Button size="sm" variant="outline" onClick={() => setAddingViolation(!addingViolation)}>
-                  + Add Violation
-                </Button>
-              </div>
-
-              {addingViolation && (
-                <div className="border rounded p-3 mb-3 space-y-2 bg-muted/50">
-                  <Textarea
-                    value={newViolDesc}
-                    onChange={(e) => setNewViolDesc(e.target.value)}
-                    placeholder="Violation description..."
-                    rows={2}
-                  />
-                  <div className="flex gap-2">
-                    <Select
-                      value={newViolSeverity}
-                      onValueChange={(v) => setNewViolSeverity(v as "low" | "medium" | "high")}
-                    >
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button size="sm" onClick={handleAddViolation}>Save</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setAddingViolation(false)}>Cancel</Button>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {(violations ?? []).map((v) => {
-                  const isEditing = editingId === v._id;
-                  const fixPhotoForViolation = (fixPhotos ?? []).filter(
-                    (fp) => fp.violationId === v._id,
-                  );
-                  return (
-                    <div
-                      key={v._id}
-                      className={`rounded p-3 ${SEV_COLORS[v.severity ?? "low"] ?? "border-l-4"}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          {isEditing ? (
-                            <Textarea
-                              value={editDesc}
-                              onChange={(e) => setEditDesc(e.target.value)}
-                              rows={2}
-                              className="mb-1"
-                            />
-                          ) : (
-                            <p className="text-sm font-medium">{v.description}</p>
-                          )}
-                          <div className="flex gap-2 mt-1 flex-wrap">
-                            <Badge variant="outline" className="text-xs">
-                              {v.severity ?? "N/A"}
-                            </Badge>
-                            <Badge variant="secondary" className="text-xs">
-                              {v.aiGenerated ? "AI" : "Manual"}
-                            </Badge>
-                            <Badge variant="outline" className="text-xs">
-                              {v.status}
-                            </Badge>
-                          </div>
-                          {isEditing && (
-                            <div className="mt-2 space-y-1">
-                              <Input
-                                placeholder="Admin note..."
-                                value={editNote}
-                                onChange={(e) => setEditNote(e.target.value)}
-                                className="text-xs"
-                              />
-                              <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  onClick={async () => {
-                                    await updateViolation({
-                                      id: v._id,
-                                      description: editDesc,
-                                      adminNote: editNote || undefined,
-                                    });
-                                    setEditingId(null);
-                                  }}
-                                >
-                                  Save
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>
-                                  Cancel
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                          {fixPhotoForViolation.length > 0 && (
-                            <div className="mt-2 space-y-2 border-t pt-2">
-                              {fixPhotoForViolation.map((fp) => (
-                                <div key={fp._id} className="flex flex-wrap gap-2 items-start">
-                                  <button
-                                    type="button"
-                                    className="shrink-0 rounded border overflow-hidden transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                                    onClick={() =>
-                                      setPhotoLightbox({
-                                        url: fp.publicUrl,
-                                        title: "Homeowner fix photo",
-                                      })
-                                    }
-                                  >
-                                    <img
-                                      src={fp.publicUrl}
-                                      alt="fix"
-                                      className="w-20 h-20 object-cover"
-                                    />
-                                  </button>
-                                  <div className="flex-1 min-w-[140px] space-y-1">
-                                    <Select
-                                      value={fp.verificationStatus}
-                                      onValueChange={async (status) => {
-                                        await setFixVerification({
-                                          id: fp._id,
-                                          status: status as
-                                            | "pending"
-                                            | "resolved"
-                                            | "notResolved"
-                                            | "needsReview",
-                                          note: fp.verificationNote ?? "",
-                                        });
-                                      }}
-                                    >
-                                      <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="pending">Pending</SelectItem>
-                                        <SelectItem value="needsReview">Needs review</SelectItem>
-                                        <SelectItem value="resolved">Resolved</SelectItem>
-                                        <SelectItem value="notResolved">Not resolved</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    <Input
-                                      className="text-xs h-8"
-                                      placeholder="Reviewer note"
-                                      defaultValue={fp.verificationNote ?? ""}
-                                      key={fp._id + (fp.verificationNote ?? "")}
-                                      onBlur={async (e) => {
-                                        await setFixVerification({
-                                          id: fp._id,
-                                          status: fp.verificationStatus,
-                                          note: e.target.value,
-                                        });
-                                      }}
-                                    />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex gap-1 shrink-0">
-                          {!isEditing && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingId(v._id);
-                                setEditDesc(v.description);
-                                setEditNote(v.adminNote ?? "");
-                              }}
-                            >
-                              Edit
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-red-500 hover:text-red-700"
-                            onClick={() => {
-                              if (confirm("Delete this violation?")) {
-                                removeViolation({ id: v._id });
-                              }
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {(violations ?? []).length === 0 && (
-                  <p className="text-sm text-muted-foreground">No violations recorded</p>
-                )}
-              </div>
-            </div>
-
-            {/* Letter actions */}
-            <div className="pt-2 border-t space-y-2">
-              <div className="flex gap-2 flex-wrap">
-                <Button variant="outline" onClick={handleLoadStoredLetter} disabled={!storedLetter?.html}>
-                  Load stored letter
-                </Button>
-              </div>
-              {storedLetter?.generatedLetterAt && (
-                <p className="text-xs text-muted-foreground">
-                  Stored letter saved: {new Date(storedLetter.generatedLetterAt).toLocaleString()}
+                <p className="text-xs text-muted-foreground min-h-[1rem]">
+                  {aiBulletsSaveState === "saving" && "Saving summarized notes..."}
+                  {aiBulletsSaveState === "saved" &&
+                    `Saved${aiBulletsLastSavedAt ? ` at ${new Date(aiBulletsLastSavedAt).toLocaleString()}` : ""}`}
+                  {aiBulletsSaveState === "error" && "Autosave failed. Try editing again."}
                 </p>
-              )}
-              {property.letterSentAt && (
-                <p className="text-xs text-muted-foreground">
-                  Last emailed: {new Date(property.letterSentAt).toLocaleDateString()}
-                </p>
-              )}
-            </div>
+              </div>
 
-            {(fixPhotos ?? []).some((fp) => !fp.violationId) && (
               <div className="rounded border p-3 space-y-2">
-                <h3 className="text-sm font-semibold">Fix photos (no linked violation)</h3>
-                {(fixPhotos ?? [])
-                  .filter((fp) => !fp.violationId)
-                  .map((fp) => (
+                <p className="text-sm font-medium">Previous Inspection Summary</p>
+                <Textarea
+                  value={adminFieldsDraft.previousInspectionSummary}
+                  onChange={(e) => setAdminFieldsDraft((s) => ({ ...s, previousInspectionSummary: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+
+              <div className="rounded border p-3 space-y-2">
+                <p className="text-sm font-medium">2024 Letter Text on File</p>
+                <Textarea
+                  value={adminFieldsDraft.priorOwnerLetterNotes2024}
+                  onChange={(e) => setAdminFieldsDraft((s) => ({ ...s, priorOwnerLetterNotes2024: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            {(fixPhotos ?? []).length > 0 && (
+              <div className="rounded border p-3 space-y-2">
+                <h3 className="text-sm font-semibold">Homeowner fix photos</h3>
+                {(fixPhotos ?? []).map((fp) => (
                     <div key={fp._id} className="flex flex-wrap gap-2 items-start">
                       <button
                         type="button"

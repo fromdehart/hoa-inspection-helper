@@ -29,7 +29,6 @@ import type * as resend from "../resend.js";
 import type * as streets from "../streets.js";
 import type * as templateRender from "../templateRender.js";
 import type * as templates from "../templates.js";
-import type * as violations from "../violations.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -56,7 +55,6 @@ declare const fullApi: ApiFromModules<{
   streets: typeof streets;
   templateRender: typeof templateRender;
   templates: typeof templates;
-  violations: typeof violations;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

@@ -50,14 +50,12 @@ export function buildLetterHtmlSync(args: {
   templateContent: string;
   property: LetterPropertyFields;
   publicBaseUrl: string;
-  /** When true, {{violations}} is filled from open violation list HTML; otherwise from inspector notes */
-  violationsOrFindingsHtml: string;
   /** Plain text for {{inspectorFindings}}; defaults to `property.inspectorNotes` */
   inspectorFindingsPlain?: string;
   /** Plain bullet list text for sample-2025 maintenance list section. */
   maintenanceItemsPlain?: string;
 }): string {
-  const { templateContent, property, publicBaseUrl, violationsOrFindingsHtml } = args;
+  const { templateContent, property, publicBaseUrl } = args;
   const portalLink = `${publicBaseUrl.replace(/\/$/, "")}/portal/${property.accessToken}`;
   const dateStr = new Date().toLocaleDateString("en-US", {
     year: "numeric",
@@ -98,7 +96,6 @@ export function buildLetterHtmlSync(args: {
 
   return templateContent
     .replace(/\{\{address\}\}/g, escapeHtml(property.address))
-    .replace(/\{\{violations\}\}/g, violationsOrFindingsHtml)
     .replace(/\{\{inspectorFindings\}\}/g, findingsFromNotes)
     .replace(/\{\{maintenanceItems\}\}/g, maintenanceItemsHtml)
     .replace(/\{\{priorInspectionReference\}\}/g, priorHtml)

@@ -90,14 +90,6 @@ export const removeRecord = internalMutation({
       throw new Error("Photo does not belong to this property.");
     }
 
-    const violations = await ctx.db
-      .query("violations")
-      .withIndex("by_photo", (q) => q.eq("photoId", args.id))
-      .collect();
-    for (const v of violations) {
-      await ctx.db.patch(v._id, { photoId: undefined });
-    }
-
     await ctx.db.delete(args.id);
     return null;
   },

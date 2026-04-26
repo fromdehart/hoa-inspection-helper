@@ -141,6 +141,32 @@ export const updateEmail = mutation({
   },
 });
 
+export const updateHomeownerNames = mutation({
+  args: { id: v.id("properties"), homeownerNames: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, { homeownerNames: args.homeownerNames });
+    return null;
+  },
+});
+
+export const updateAdminPropertyFields = mutation({
+  args: {
+    id: v.id("properties"),
+    priorCompletedWorkResponse: v.optional(v.string()),
+    previousCitations2024: v.optional(v.string()),
+    previousFrontObs: v.optional(v.string()),
+    previousBackObs: v.optional(v.string()),
+    previousInspectorComments: v.optional(v.string()),
+    previousInspectionSummary: v.optional(v.string()),
+    priorOwnerLetterNotes2024: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { id, ...fields } = args;
+    await ctx.db.patch(id, fields);
+    return null;
+  },
+});
+
 export const markLetterSent = internalMutation({
   args: { id: v.id("properties") },
   handler: async (ctx, args) => {
@@ -302,6 +328,17 @@ export const updateInspectorNotes = mutation({
   },
 });
 
+export const updateAiLetterBullets = mutation({
+  args: { id: v.id("properties"), aiLetterBullets: v.string() },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      aiLetterBullets: args.aiLetterBullets,
+      aiLetterBulletsAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 /** Inspector completion without auto-generating a letter. */
 export const completeHouseCapture = mutation({
   args: {
@@ -351,7 +388,7 @@ export const completeHouseAndSaveLetter = mutation({
     const merged = {
       address: property.address,
       accessToken: property.accessToken,
-      recipientName: "Homeowner",
+      recipientName: property.homeownerNames?.trim() || "Homeowner",
       recipientStreet: property.address,
       recipientCityStateZip: "Fairfax, VA 22030",
       inspectorNotes: args.inspectorNotes,
@@ -368,7 +405,6 @@ export const completeHouseAndSaveLetter = mutation({
       templateContent,
       property: merged,
       publicBaseUrl: publicBase,
-      violationsOrFindingsHtml: "",
       inspectorFindingsPlain: args.inspectorNotes,
       maintenanceItemsPlain,
     });

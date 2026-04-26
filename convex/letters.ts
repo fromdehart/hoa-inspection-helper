@@ -11,7 +11,9 @@ export const generate = action({
       return { html: "<p>Property not found.</p>" };
     }
 
-    const uploadedTemplate = await ctx.runQuery(api.letterTemplateDocs.getActive, {});
+    const uploadedTemplate =
+      (await ctx.runQuery(api.letterTemplateDocs.getActive, {})) ??
+      (await ctx.runQuery(api.letterTemplateDocs.list, {}))[0];
     const maintenanceItemsPlain = property.aiLetterBullets?.trim() || "";
     const maintenanceItems = maintenanceItemsPlain
       .split("\n")
@@ -25,20 +27,20 @@ export const generate = action({
 
     if (!uploadedTemplate) {
       return {
-        html: "<p>No active uploaded template. Go to Settings and upload/activate a DOCX or PDF template.</p>",
+        html: "<p>No uploaded template found. Go to Settings and upload a DOCX or PDF template.</p>",
       };
     }
     const html = uploadedTemplate.templateText?.trim()
       ? mergeTokenTemplateTextToHtml(uploadedTemplate.templateText, {
           date,
-          recipientName: "Homeowner",
+          recipientName: property.homeownerNames?.trim() || "Homeowner",
           recipientStreet: property.address,
           recipientCityStateZip: "Fairfax, VA 22030",
           maintenanceItems,
         })
       : mergeUploadedTemplateToHtml(uploadedTemplate, {
       date,
-      recipientName: "Homeowner",
+      recipientName: property.homeownerNames?.trim() || "Homeowner",
       recipientStreet: property.address,
       recipientCityStateZip: "Fairfax, VA 22030",
       maintenanceItems,

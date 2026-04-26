@@ -20,6 +20,9 @@ type MergeData = {
   maintenanceItems: string[];
 };
 
+const BULLET_UL_STYLE = "margin: 0 0 12px 20px; padding: 0 0 0 14px; list-style-type: disc;";
+const BULLET_LI_STYLE = "margin: 0 0 6px 0;";
+
 export function mergeUploadedTemplateToHtml(doc: TemplateDoc, data: MergeData): string {
   const blocks = [...doc.blocks].sort((a, b) => a.idx - b.idx);
   const maintenanceStart = doc.mapping.maintenanceStart;
@@ -29,11 +32,11 @@ export function mergeUploadedTemplateToHtml(doc: TemplateDoc, data: MergeData): 
   for (const b of blocks) {
     if (maintenanceStart != null && maintenanceEnd != null && b.idx >= maintenanceStart && b.idx <= maintenanceEnd) {
       if (b.idx === maintenanceStart) {
-        out.push("<ul>");
+        out.push(`<ul style="${BULLET_UL_STYLE}">`);
         const items = data.maintenanceItems.length
           ? data.maintenanceItems
           : ["No exterior routine maintenance items were listed for this inspection."];
-        for (const item of items) out.push(`<li>${escapeHtml(item)}</li>`);
+        for (const item of items) out.push(`<li style="${BULLET_LI_STYLE}">${escapeHtml(item)}</li>`);
         out.push("</ul>");
       }
       continue;
@@ -47,7 +50,7 @@ export function mergeUploadedTemplateToHtml(doc: TemplateDoc, data: MergeData): 
 
     if (!text.trim()) continue;
     if (b.kind === "bullet") {
-      out.push(`<ul><li>${escapeHtml(text)}</li></ul>`);
+      out.push(`<ul style="${BULLET_UL_STYLE}"><li style="${BULLET_LI_STYLE}">${escapeHtml(text)}</li></ul>`);
     } else {
       out.push(`<p>${escapeHtml(text)}</p>`);
     }
@@ -57,28 +60,41 @@ export function mergeUploadedTemplateToHtml(doc: TemplateDoc, data: MergeData): 
 
 export function mergeTokenTemplateTextToHtml(templateText: string, data: MergeData): string {
   const maintenanceItems = data.maintenanceItems.length
-    ? data.maintenanceItems.map((x) => `- ${x}`).join("\n")
-    : "- No exterior routine maintenance items were listed for this inspection.";
+    ? data.maintenanceItems
+    : ["No exterior routine maintenance items were listed for this inspection."];
+  const maintenanceTokenSentinel = "__MAINTENANCE_ITEMS_BLOCK__";
 
   const mergedText = templateText
     .replace(/\{\{date\}\}/g, data.date)
     .replace(/\{\{recipientName\}\}/g, data.recipientName)
     .replace(/\{\{recipientStreet\}\}/g, data.recipientStreet)
     .replace(/\{\{recipientCityStateZip\}\}/g, data.recipientCityStateZip)
-    .replace(/\{\{maintenanceItems\}\}/g, maintenanceItems);
+    .replace(/\{\{maintenanceItems\}\}/g, maintenanceTokenSentinel);
 
   const lines = mergedText.split(/\r?\n/);
   const out: string[] = [];
   let listOpen = false;
   for (const raw of lines) {
     const line = raw.trimEnd();
+    if (line.trim() === maintenanceTokenSentinel) {
+      if (listOpen) {
+        out.push("</ul>");
+        listOpen = false;
+      }
+      out.push(`<ul style="${BULLET_UL_STYLE}">`);
+      for (const item of maintenanceItems) {
+        out.push(`<li style="${BULLET_LI_STYLE}">${escapeHtml(item.trim())}</li>`);
+      }
+      out.push("</ul>");
+      continue;
+    }
     const bulletMatch = line.match(/^\s*[-*•]\s+(.+)$/);
     if (bulletMatch) {
       if (!listOpen) {
-        out.push("<ul>");
+        out.push(`<ul style="${BULLET_UL_STYLE}">`);
         listOpen = true;
       }
-      out.push(`<li>${escapeHtml(bulletMatch[1].trim())}</li>`);
+      out.push(`<li style="${BULLET_LI_STYLE}">${escapeHtml(bulletMatch[1].trim())}</li>`);
       continue;
     }
     if (listOpen) {

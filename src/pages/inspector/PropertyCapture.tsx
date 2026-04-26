@@ -74,6 +74,9 @@ export default function PropertyCapture() {
   const [listening, setListening] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
   const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
+  const [aiBulletsDraft, setAiBulletsDraft] = useState("");
+  const [aiBulletsSaveState, setAiBulletsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [aiBulletsLastSavedAt, setAiBulletsLastSavedAt] = useState<number | null>(null);
   const [noteSaveState, setNoteSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -86,10 +89,14 @@ export default function PropertyCapture() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const noteAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiBulletsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteInitializedRef = useRef(false);
   const lastPersistedNoteRef = useRef("");
+  const aiBulletsInitializedRef = useRef(false);
+  const lastPersistedAiBulletsRef = useRef("");
   /** Avoid re-hydrating note from Convex on every refetch (causes textarea + status flash after autosave). */
   const noteHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
+  const aiBulletsHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
 
   const property = useQuery(api.properties.get, { id: pid });
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
@@ -102,6 +109,7 @@ export default function PropertyCapture() {
   const setFullImage = useMutation(api.photos.setFullImage);
   const removePhotoForInspector = useAction(api.photos.removeForInspector);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
+  const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
   const updatePropertyStatus = useMutation(api.properties.updateStatus);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
@@ -112,6 +120,12 @@ export default function PropertyCapture() {
     if (noteAutosaveTimerRef.current) {
       clearTimeout(noteAutosaveTimerRef.current);
       noteAutosaveTimerRef.current = null;
+    }
+    aiBulletsHydratedForPropertyIdRef.current = null;
+    aiBulletsInitializedRef.current = false;
+    if (aiBulletsAutosaveTimerRef.current) {
+      clearTimeout(aiBulletsAutosaveTimerRef.current);
+      aiBulletsAutosaveTimerRef.current = null;
     }
   }, [pid]);
 
@@ -129,9 +143,38 @@ export default function PropertyCapture() {
   }, [pid, property]);
 
   useEffect(() => {
+    if (!property || property._id !== pid) return;
+    if (aiBulletsHydratedForPropertyIdRef.current === pid) return;
+
+    aiBulletsHydratedForPropertyIdRef.current = pid;
+    const initialBullets = property.aiLetterBullets ?? "";
+    setAiBulletsDraft(initialBullets);
+    lastPersistedAiBulletsRef.current = initialBullets;
+    aiBulletsInitializedRef.current = true;
+    setAiBulletsSaveState("idle");
+    setAiBulletsLastSavedAt(property.aiLetterBulletsAt ?? null);
+  }, [pid, property]);
+
+  useEffect(() => {
+    if (!property || property._id !== pid) return;
+    if (!aiBulletsInitializedRef.current) return;
+    const serverBullets = property.aiLetterBullets ?? "";
+    const localIsDirty = aiBulletsDraft !== lastPersistedAiBulletsRef.current;
+    if (!localIsDirty && serverBullets !== lastPersistedAiBulletsRef.current) {
+      setAiBulletsDraft(serverBullets);
+      lastPersistedAiBulletsRef.current = serverBullets;
+      setAiBulletsLastSavedAt(property.aiLetterBulletsAt ?? Date.now());
+      setAiBulletsSaveState("saved");
+    }
+  }, [pid, property?._id, property?.aiLetterBullets, property?.aiLetterBulletsAt, aiBulletsDraft]);
+
+  useEffect(() => {
     return () => {
       if (noteAutosaveTimerRef.current) {
         clearTimeout(noteAutosaveTimerRef.current);
+      }
+      if (aiBulletsAutosaveTimerRef.current) {
+        clearTimeout(aiBulletsAutosaveTimerRef.current);
       }
     };
   }, []);
@@ -155,6 +198,25 @@ export default function PropertyCapture() {
       }
     }, 1200);
   }, [note, pid, updateInspectorNotes]);
+
+  useEffect(() => {
+    if (!aiBulletsInitializedRef.current) return;
+    if (aiBulletsDraft === lastPersistedAiBulletsRef.current) return;
+
+    if (aiBulletsAutosaveTimerRef.current) clearTimeout(aiBulletsAutosaveTimerRef.current);
+    aiBulletsAutosaveTimerRef.current = setTimeout(async () => {
+      try {
+        setAiBulletsSaveState("saving");
+        await updateAiLetterBullets({ id: pid, aiLetterBullets: aiBulletsDraft });
+        lastPersistedAiBulletsRef.current = aiBulletsDraft;
+        setAiBulletsLastSavedAt(Date.now());
+        setAiBulletsSaveState("saved");
+      } catch (err) {
+        console.error("AI bullets autosave failed:", err);
+        setAiBulletsSaveState("error");
+      }
+    }, 1200);
+  }, [aiBulletsDraft, pid, updateAiLetterBullets]);
 
   useEffect(() => {
     if (!statusMenuOpen) return;
@@ -588,7 +650,7 @@ export default function PropertyCapture() {
                     await updateInspectorNotes({ id: pid, inspectorNotes: note });
                     lastPersistedNoteRef.current = note;
                     const r = await generateAiLetterBullets({ propertyId: pid });
-                    if (!r.ok) alert(r.error);
+                    if (!r.ok) alert("error" in r ? r.error : "Could not generate inspection notes.");
                   } catch (e) {
                     console.error(e);
                     alert("Could not generate inspection notes.");
@@ -614,10 +676,19 @@ export default function PropertyCapture() {
                 Updated {new Date(property.aiLetterBulletsAt).toLocaleString()}
               </p>
             )}
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">
-              {property?.aiLetterBullets?.trim() ||
-                "Optional: turn your raw notes into HOA-style bullets for letters (when there are no violation records)."}
-            </p>
+            <textarea
+              value={aiBulletsDraft}
+              onChange={(e) => setAiBulletsDraft(e.target.value)}
+              rows={5}
+              className="w-full text-base px-3 py-2 rounded-xl border border-violet-200 focus:outline-none focus:border-violet-400 resize-y bg-white text-gray-700 transition-colors"
+              placeholder="Optional: turn your raw notes into HOA-style bullets for letters."
+            />
+            <div className="text-xs text-gray-500 min-h-[1rem]">
+              {aiBulletsSaveState === "saving" && "Saving summarized notes..."}
+              {aiBulletsSaveState === "saved" &&
+                `Saved${aiBulletsLastSavedAt ? ` at ${new Date(aiBulletsLastSavedAt).toLocaleString()}` : ""}`}
+              {aiBulletsSaveState === "error" && "Autosave failed. Try editing again."}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2 mt-3">
             <button

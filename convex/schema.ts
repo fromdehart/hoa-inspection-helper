@@ -12,6 +12,7 @@ export default defineSchema({
     address: v.string(),
     houseNumber: v.number(),
     email: v.optional(v.string()),
+    homeownerNames: v.optional(v.string()),
     /** "Completed work email from 2024 inspection?" column (often yes/no), not always a real address */
     priorCompletedWorkResponse: v.optional(v.string()),
     status: v.union(
@@ -66,30 +67,8 @@ export default defineSchema({
     ),
   }).index("by_property", ["propertyId"]),
 
-  violations: defineTable({
-    propertyId: v.id("properties"),
-    photoId: v.optional(v.id("photos")),
-    description: v.string(),
-    severity: v.optional(v.union(
-      v.literal("low"),
-      v.literal("medium"),
-      v.literal("high"),
-    )),
-    aiGenerated: v.boolean(),
-    adminNote: v.optional(v.string()),
-    status: v.union(
-      v.literal("open"),
-      v.literal("resolved"),
-      v.literal("needsReview"),
-    ),
-    createdAt: v.number(),
-  })
-    .index("by_property", ["propertyId"])
-    .index("by_photo", ["photoId"]),
-
   fixPhotos: defineTable({
     propertyId: v.id("properties"),
-    violationId: v.optional(v.id("violations")),
     filePath: v.string(),
     publicUrl: v.string(),
     uploadedAt: v.number(),
@@ -101,8 +80,7 @@ export default defineSchema({
     ),
     verificationNote: v.optional(v.string()),
   })
-    .index("by_property", ["propertyId"])
-    .index("by_violation", ["violationId"]),
+    .index("by_property", ["propertyId"]),
 
   aiConfig: defineTable({
     key: v.string(),

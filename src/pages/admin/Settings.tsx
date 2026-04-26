@@ -116,20 +116,21 @@ export default function Settings() {
   };
 
   const latestTemplate = templateDocs?.[0];
+  const currentTemplate = activeTemplate ?? latestTemplate;
 
   useEffect(() => {
-    if (!latestTemplate?._id) {
+    if (!currentTemplate?._id) {
       loadedTemplateIdRef.current = null;
       setDocTemplateText("");
       setDocSaveState("idle");
       setDocLastSavedAt(null);
       return;
     }
-    if (loadedTemplateIdRef.current === latestTemplate._id) return;
-    loadedTemplateIdRef.current = latestTemplate._id;
-    setDocTemplateText(latestTemplate?.templateText ?? latestTemplate?.parsedText ?? "");
+    if (loadedTemplateIdRef.current === currentTemplate._id) return;
+    loadedTemplateIdRef.current = currentTemplate._id;
+    setDocTemplateText(currentTemplate?.templateText ?? currentTemplate?.parsedText ?? "");
     setDocSaveState("idle");
-  }, [latestTemplate?._id, latestTemplate?.templateText, latestTemplate?.parsedText]);
+  }, [currentTemplate?._id, currentTemplate?.templateText, currentTemplate?.parsedText]);
 
   useEffect(() => {
     return () => {
@@ -138,21 +139,21 @@ export default function Settings() {
   }, []);
 
   useEffect(() => {
-    if (!latestTemplate?._id) return;
-    if (docTemplateText === (latestTemplate.templateText ?? latestTemplate.parsedText ?? "")) return;
+    if (!currentTemplate?._id) return;
+    if (docTemplateText === (currentTemplate.templateText ?? currentTemplate.parsedText ?? "")) return;
 
     if (docAutosaveTimerRef.current) clearTimeout(docAutosaveTimerRef.current);
     docAutosaveTimerRef.current = setTimeout(async () => {
       try {
         setDocSaveState("saving");
-        await updateTemplateText({ id: latestTemplate._id, templateText: docTemplateText });
+        await updateTemplateText({ id: currentTemplate._id, templateText: docTemplateText });
         setDocSaveState("saved");
         setDocLastSavedAt(Date.now());
       } catch {
         setDocSaveState("error");
       }
     }, 900);
-  }, [docTemplateText, latestTemplate?._id, latestTemplate?.templateText, latestTemplate?.parsedText, updateTemplateText]);
+  }, [docTemplateText, currentTemplate?._id, currentTemplate?.templateText, currentTemplate?.parsedText, updateTemplateText]);
 
   return (
     <div className="min-h-screen bg-[#f8f7ff]">
@@ -240,7 +241,7 @@ export default function Settings() {
           {templateErr && <p className="text-xs text-red-600">{templateErr}</p>}
           {saved.uploadedTemplate && <p className="text-xs text-green-600">Template uploaded and parsed.</p>}
 
-          {latestTemplate && (
+          {currentTemplate && (
             <div className="rounded border p-3 space-y-2">
               <Textarea
                 ref={docTemplateRef}
