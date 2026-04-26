@@ -1,9 +1,6 @@
 {
   "schema": "./convex/schema.ts",
   "functions": "./convex",
-  "auth": {
-    "providers": []
-  },
   "node": {
     "18": true
   },
@@ -19,6 +16,9 @@
     },
     "OPENAI_API_KEY": {
       "description": "OpenAI API key for AI functionality"
+    },
+    "CLERK_JWT_ISSUER_DOMAIN": {
+      "description": "Clerk Frontend API URL (issuer) for Convex auth, e.g. https://your-app.clerk.accounts.dev"
     }
   }
 }

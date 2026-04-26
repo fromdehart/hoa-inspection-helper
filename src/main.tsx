@@ -1,7 +1,9 @@
 import { createRoot } from "react-dom/client";
-import { ClerkProvider } from "@clerk/clerk-react";
+import { ClerkProvider, useAuth } from "@clerk/clerk-react";
+import { ConvexProviderWithClerk } from "convex/react-clerk";
 import App from "./App.tsx";
 import "./index.css";
+import { convex } from "@/lib/convexClient";
 import { authLog, clerkPublishableKeyHint } from "@/lib/authLog";
 
 const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -17,6 +19,8 @@ authLog("bootstrap", "clerk_provider_mounting", {
 
 createRoot(document.getElementById("root")!).render(
   <ClerkProvider publishableKey={clerkPublishableKey}>
-    <App />
+    <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+      <App />
+    </ConvexProviderWithClerk>
   </ClerkProvider>,
 );

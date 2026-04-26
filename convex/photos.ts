@@ -190,7 +190,7 @@ export const removeForInspector = action({
   },
   handler: async (ctx, args) => {
     const viewer = await ctx.runQuery(api.tenancy.viewerContext, {});
-    if (viewer.role !== "admin" && viewer.role !== "inspector") {
+    if (!viewer || (viewer.role !== "admin" && viewer.role !== "inspector")) {
       throw new Error("Inspector or admin access required.");
     }
     const property = await ctx.runQuery(internal.properties.getInternal, { id: args.propertyId });

@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
+import { ConvexAuthHelp } from "@/components/ConvexAuthHelp";
 
 export default function InspectorGate() {
   const navigate = useNavigate();
@@ -57,6 +58,14 @@ export default function InspectorGate() {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
+  if (viewer === null) {
+    return (
+      <div className="min-h-screen gradient-hero flex items-center justify-center px-6 py-10">
+        <ConvexAuthHelp />
+      </div>
+    );
+  }
+
   if (!canInspect) {
     return (
       <div className="min-h-screen gradient-hero flex items-center justify-center px-6">
@@ -64,7 +73,9 @@ export default function InspectorGate() {
           <div className="text-center mb-8">
             <div className="text-6xl mb-3">🚫</div>
             <h1 className="text-3xl font-extrabold text-white">Inspector Access Required</h1>
-            <p className="text-sky-200 mt-1">Your account is not assigned inspector or admin role in Clerk.</p>
+            <p className="text-sky-200 mt-1">
+              Your HOA membership does not include inspector or admin access for this community.
+            </p>
           </div>
           <button
             type="button"

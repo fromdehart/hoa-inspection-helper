@@ -5,6 +5,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
+import { ConvexAuthHelp } from "@/components/ConvexAuthHelp";
 
 export default function AdminGate() {
   const navigate = useNavigate();
@@ -58,6 +59,14 @@ export default function AdminGate() {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
+  if (viewer === null) {
+    return (
+      <div className="min-h-screen gradient-hero flex items-center justify-center px-6 py-10">
+        <ConvexAuthHelp />
+      </div>
+    );
+  }
+
   if (!isAdmin) {
     return (
       <div className="min-h-screen gradient-hero flex items-center justify-center px-6">
@@ -65,7 +74,9 @@ export default function AdminGate() {
           <div className="text-center mb-8">
             <div className="text-6xl mb-3">🚫</div>
             <h1 className="text-3xl font-extrabold text-white">Admin Access Required</h1>
-            <p className="text-purple-200 mt-1">Your account is not assigned the admin role in Clerk.</p>
+            <p className="text-purple-200 mt-1">
+              Your HOA membership does not include admin access for this community.
+            </p>
           </div>
           <button
             type="button"

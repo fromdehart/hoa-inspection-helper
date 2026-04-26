@@ -28,6 +28,24 @@ export type ViewerContext = {
   role: MembershipRole;
 };
 
+/** For public queries: no identity, membership, or active HOA → null (no throw). */
+export async function tryGetViewerContext(ctx: CtxWithDbAndAuth): Promise<ViewerContext | null> {
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity?.subject) return null;
+  const membership = await ctx.db
+    .query("userHoaMemberships")
+    .withIndex("by_clerk_user", (q) => q.eq("clerkUserId", identity.subject))
+    .first();
+  if (!membership) return null;
+  const hoa = await ctx.db.get(membership.hoaId);
+  if (!hoa || hoa.status !== "active") return null;
+  return {
+    clerkUserId: identity.subject,
+    hoaId: membership.hoaId,
+    role: membership.role,
+  };
+}
+
 export async function requireViewerContext(ctx: CtxWithDbAndAuth): Promise<ViewerContext> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity?.subject) {

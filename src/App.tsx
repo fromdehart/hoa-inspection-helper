@@ -1,6 +1,4 @@
-import { ConvexProvider } from "convex/react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { convex } from "./lib/convexClient";
 import RoleGuard from "./components/RoleGuard";
 import Landing from "./pages/Landing";
 import AdminGate from "./pages/admin/AdminGate";
@@ -16,9 +14,8 @@ import SignInPage from "./pages/auth/SignInPage";
 
 const App = () => {
   return (
-    <ConvexProvider client={convex}>
-      <BrowserRouter>
-        <Routes>
+    <BrowserRouter>
+      <Routes>
           <Route path="/" element={<Landing />} />
           {/* Clerk MFA / email steps use /sign-in/factor-one, etc. — splat keeps them on this page */}
           <Route path="/sign-in/*" element={<SignInPage />} />
@@ -80,9 +77,8 @@ const App = () => {
               </RoleGuard>
             }
           />
-        </Routes>
-      </BrowserRouter>
-    </ConvexProvider>
+      </Routes>
+    </BrowserRouter>
   );
 };
 
