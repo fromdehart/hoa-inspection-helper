@@ -17,8 +17,8 @@ async function letterHtmlToPdfBlob(html: string): Promise<Blob> {
   host.style.position = "fixed";
   host.style.left = "-9999px";
   host.style.top = "0";
-  host.style.width = "640px";
-  host.style.padding = "16px";
+  host.style.width = "816px";
+  host.style.padding = "0";
   host.style.background = "#fff";
   host.innerHTML = html;
   document.body.appendChild(host);
@@ -32,14 +32,48 @@ async function letterHtmlToPdfBlob(html: string): Promise<Blob> {
     const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
-    const margin = 40;
+    const margin = 36;
     const maxW = pageW - margin * 2;
     const maxH = pageH - margin * 2;
-    const scale = Math.min(maxW / canvas.width, maxH / canvas.height, 1);
-    const w = canvas.width * scale;
-    const h = canvas.height * scale;
-    const imgData = canvas.toDataURL("image/png");
-    pdf.addImage(imgData, "PNG", (pageW - w) / 2, (pageH - h) / 2, w, h);
+
+    const scale = maxW / canvas.width;
+    const pageSlicePx = Math.floor(maxH / scale);
+    let y = 0;
+    let pageIdx = 0;
+
+    while (y < canvas.height) {
+      const sliceHeight = Math.min(pageSlicePx, canvas.height - y);
+      const pageCanvas = document.createElement("canvas");
+      pageCanvas.width = canvas.width;
+      pageCanvas.height = sliceHeight;
+
+      const pageCtx = pageCanvas.getContext("2d");
+      if (!pageCtx) throw new Error("Could not create 2D context for PDF page");
+
+      pageCtx.fillStyle = "#ffffff";
+      pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+      pageCtx.drawImage(
+        canvas,
+        0,
+        y,
+        canvas.width,
+        sliceHeight,
+        0,
+        0,
+        canvas.width,
+        sliceHeight,
+      );
+
+      const imgData = pageCanvas.toDataURL("image/png");
+      const outH = sliceHeight * scale;
+
+      if (pageIdx > 0) pdf.addPage();
+      pdf.addImage(imgData, "PNG", margin, margin, maxW, outH);
+
+      y += sliceHeight;
+      pageIdx++;
+    }
+
     return pdf.output("blob");
   } finally {
     document.body.removeChild(host);

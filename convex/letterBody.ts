@@ -22,6 +22,9 @@ export function paragraphsFromPlainText(text: string): string {
 export type LetterPropertyFields = {
   address: string;
   accessToken: string;
+  recipientName?: string;
+  recipientStreet?: string;
+  recipientCityStateZip?: string;
   inspectorNotes?: string;
   previousFrontObs?: string;
   previousBackObs?: string;
@@ -29,6 +32,19 @@ export type LetterPropertyFields = {
   previousInspectionSummary?: string;
   previousCitations2024?: string;
 };
+
+function htmlListItemsFromPlain(text: string): string {
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => l.replace(/^[-*•]\s*/, "").trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return `<li>No exterior routine maintenance items were listed for this inspection.</li>`;
+  }
+  return lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("\n");
+}
 
 export function buildLetterHtmlSync(args: {
   templateContent: string;
@@ -38,6 +54,8 @@ export function buildLetterHtmlSync(args: {
   violationsOrFindingsHtml: string;
   /** Plain text for {{inspectorFindings}}; defaults to `property.inspectorNotes` */
   inspectorFindingsPlain?: string;
+  /** Plain bullet list text for sample-2025 maintenance list section. */
+  maintenanceItemsPlain?: string;
 }): string {
   const { templateContent, property, publicBaseUrl, violationsOrFindingsHtml } = args;
   const portalLink = `${publicBaseUrl.replace(/\/$/, "")}/portal/${property.accessToken}`;
@@ -72,27 +90,49 @@ export function buildLetterHtmlSync(args: {
       ? args.inspectorFindingsPlain
       : (property.inspectorNotes ?? "");
   const findingsFromNotes = paragraphsFromPlainText(findingsPlain);
+  const maintenanceItemsPlain = args.maintenanceItemsPlain ?? findingsPlain;
+  const maintenanceItemsHtml = htmlListItemsFromPlain(maintenanceItemsPlain);
+  const recipientStreet = property.recipientStreet ?? property.address;
+  const recipientName = property.recipientName?.trim() || "Homeowner";
+  const recipientCityStateZip = property.recipientCityStateZip?.trim() || "Fairfax, VA 22030";
 
   return templateContent
     .replace(/\{\{address\}\}/g, escapeHtml(property.address))
     .replace(/\{\{violations\}\}/g, violationsOrFindingsHtml)
     .replace(/\{\{inspectorFindings\}\}/g, findingsFromNotes)
+    .replace(/\{\{maintenanceItems\}\}/g, maintenanceItemsHtml)
     .replace(/\{\{priorInspectionReference\}\}/g, priorHtml)
     .replace(/\{\{portalLink\}\}/g, `<a href="${escapeHtml(portalLink)}">${escapeHtml(portalLink)}</a>`)
+    .replace(/\{\{recipientName\}\}/g, escapeHtml(recipientName))
+    .replace(/\{\{recipientStreet\}\}/g, escapeHtml(recipientStreet))
+    .replace(/\{\{recipientCityStateZip\}\}/g, escapeHtml(recipientCityStateZip))
     .replace(/\{\{date\}\}/g, escapeHtml(dateStr));
 }
 
-export const DEFAULT_LETTER_TEMPLATE = `<div style="font-family: Georgia, serif; max-width: 640px; margin: 0 auto; padding: 24px; line-height: 1.5;">
-  <p>{{date}}</p>
-  <p>Re: Individual inspection — {{address}}</p>
-  <p>Dear Homeowner,</p>
-  <p>The Association has completed its periodic exterior inspection of your lot. The following reflects observations from this inspection and reference information from our records.</p>
-  <h3 style="margin-top:1.25em;">Current inspection findings</h3>
-  {{inspectorFindings}}
-  <h3 style="margin-top:1.25em;">Reference — prior inspection notes</h3>
-  {{priorInspectionReference}}
-  <p style="margin-top:1.25em;">Please review any items that apply to your property. Where corrections are required, you may submit photos showing completed work through the homeowner portal:</p>
-  <p>{{portalLink}}</p>
-  <p>Thank you for helping keep the community in good repair.</p>
-  <p>Sincerely,<br/>Association Inspection Committee</p>
+export const DEFAULT_LETTER_TEMPLATE = `<div style="font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.35; color: #000; max-width: 720px; margin: 0 auto; padding: 28px 36px;">
+  <p style="margin: 0 0 8px 0;">{{date}}</p>
+  <p style="margin: 0 0 12px 0; font-weight: bold;">TIME SENSITIVE CONTENT</p>
+  <p style="margin: 0;">{{recipientName}}</p>
+  <p style="margin: 0;">{{recipientStreet}}</p>
+  <p style="margin: 0 0 16px 0;">{{recipientCityStateZip}}</p>
+
+  <p style="margin: 0 0 12px 0;">Dear Homeowner(s):</p>
+
+  <p style="margin: 0 0 12px 0;">The Covenants Committee, as directed by the Board of Directors for the Ridge Top Terrace Homeowners Association, has recently conducted a walkthrough of the property in order to ensure that our community has a well-maintained, cohesive, and attractive appearance. Inspections continued to focus on the fronts and sides of homes, as well as rears and fencing that are visible from the street. Overall, our community looks great, and we are pleased to have noticed many homeowners working on the exterior of their homes over the last few months.</p>
+
+  <p style="margin: 0 0 12px 0;">The Board of Directors would like to thank you for your continued commitment to maintaining the appearance and integrity of our community. As part of our annual property review, we are pleased to report that no major structural issues or significant repairs were identified at your home.</p>
+
+  <p style="margin: 0 0 12px 0;">Any needs observed at your property relate to general, routine maintenance, which helps preserve curb appeal and prevent future deterioration. These may include any of the following:</p>
+  <ul style="margin: 0 0 12px 20px; padding: 0 0 0 14px;">
+    {{maintenanceItems}}
+  </ul>
+
+  <p style="margin: 0 0 12px 0;">We understand that seasonal weather conditions and current supply delays may make immediate completion difficult. Accordingly, these items are not required to be addressed right away. However, we do ask that all listed maintenance be completed before the next inspection cycle in Spring 2026.</p>
+
+  <p style="margin: 0 0 12px 0;">Thank you for your attention to these routine items and for your continued efforts to keep our community beautiful. If you have any questions or require clarification, please feel free to contact Krystal Hudson with Capitol Management at Krystal@capitolmanagementcorp.net.</p>
+
+  <div style="page-break-inside: avoid; margin-top: 14px;">
+    <p style="margin: 0 0 10px 0;">Thank you again for your cooperation and commitment to helping keep Ridge Top Terrace HOA a pleasant and attractive community.</p>
+    <p style="margin: 0;">Covenants Committee<br/>Ridge Top Terrace HOA</p>
+  </div>
 </div>`;

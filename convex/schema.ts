@@ -115,4 +115,39 @@ export default defineSchema({
     content: v.string(),
     updatedAt: v.number(),
   }).index("by_type", ["type"]),
+
+  letterTemplateDocs: defineTable({
+    fileName: v.string(),
+    fileType: v.union(v.literal("docx"), v.literal("pdf")),
+    sourcePublicUrl: v.string(),
+    sourceFilePath: v.string(),
+    parsedText: v.string(),
+    /** Admin-editable, tokenized template text (Word/Docs-like plain editor, not HTML). */
+    templateText: v.optional(v.string()),
+    blocks: v.array(v.object({
+      idx: v.number(),
+      text: v.string(),
+      kind: v.union(v.literal("paragraph"), v.literal("bullet")),
+    })),
+    detection: v.object({
+      date: v.optional(v.object({ blockIdx: v.number(), confidence: v.number() })),
+      recipientName: v.optional(v.object({ blockIdx: v.number(), confidence: v.number() })),
+      recipientStreet: v.optional(v.object({ blockIdx: v.number(), confidence: v.number() })),
+      recipientCityStateZip: v.optional(v.object({ blockIdx: v.number(), confidence: v.number() })),
+      maintenanceStart: v.optional(v.object({ blockIdx: v.number(), confidence: v.number() })),
+      maintenanceEnd: v.optional(v.object({ blockIdx: v.number(), confidence: v.number() })),
+    }),
+    mapping: v.object({
+      date: v.optional(v.number()),
+      recipientName: v.optional(v.number()),
+      recipientStreet: v.optional(v.number()),
+      recipientCityStateZip: v.optional(v.number()),
+      maintenanceStart: v.optional(v.number()),
+      maintenanceEnd: v.optional(v.number()),
+    }),
+    status: v.union(v.literal("draft"), v.literal("active")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    activatedAt: v.optional(v.number()),
+  }).index("by_status", ["status"]),
 });

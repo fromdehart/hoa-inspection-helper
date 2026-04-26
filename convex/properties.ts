@@ -3,7 +3,6 @@ import { v } from "convex/values";
 import {
   buildLetterHtmlSync,
   DEFAULT_LETTER_TEMPLATE,
-  paragraphsFromPlainText,
 } from "./letterBody";
 
 export const list = query({
@@ -352,6 +351,9 @@ export const completeHouseAndSaveLetter = mutation({
     const merged = {
       address: property.address,
       accessToken: property.accessToken,
+      recipientName: "Homeowner",
+      recipientStreet: property.address,
+      recipientCityStateZip: "Fairfax, VA 22030",
       inspectorNotes: args.inspectorNotes,
       previousFrontObs: property.previousFrontObs,
       previousBackObs: property.previousBackObs,
@@ -360,16 +362,15 @@ export const completeHouseAndSaveLetter = mutation({
       previousCitations2024: property.previousCitations2024,
     };
 
-    const plainForLetter =
-      property.aiLetterBullets?.trim() || args.inspectorNotes;
-    const findingsHtml = paragraphsFromPlainText(plainForLetter);
+    const maintenanceItemsPlain = property.aiLetterBullets?.trim() || "";
     const publicBase = process.env.PUBLIC_BASE_URL ?? "http://localhost:5173";
     const html = buildLetterHtmlSync({
       templateContent,
       property: merged,
       publicBaseUrl: publicBase,
-      violationsOrFindingsHtml: findingsHtml,
-      inspectorFindingsPlain: plainForLetter,
+      violationsOrFindingsHtml: "",
+      inspectorFindingsPlain: args.inspectorNotes,
+      maintenanceItemsPlain,
     });
 
     await ctx.db.patch(args.id, {
