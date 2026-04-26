@@ -1,10 +1,15 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { requireViewerRole } from "./lib/tenantAuth";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    const all = await ctx.db.query("letterTemplateDocs").collect();
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const all = await ctx.db
+      .query("letterTemplateDocs")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
     return all.sort((a, b) => b.updatedAt - a.updatedAt);
   },
 });
@@ -12,9 +17,10 @@ export const list = query({
 export const getActive = query({
   args: {},
   handler: async (ctx) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
     return ctx.db
       .query("letterTemplateDocs")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .withIndex("by_hoa_status", (q) => q.eq("hoaId", viewer.hoaId).eq("status", "active"))
       .first();
   },
 });
@@ -32,6 +38,9 @@ export const setMapping = mutation({
     }),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const doc = await ctx.db.get(args.id);
+    if (!doc || !doc.hoaId || doc.hoaId !== viewer.hoaId) throw new Error("Template not found.");
     await ctx.db.patch(args.id, { mapping: args.mapping, updatedAt: Date.now() });
     return null;
   },
@@ -43,6 +52,9 @@ export const updateTemplateText = mutation({
     templateText: v.string(),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const doc = await ctx.db.get(args.id);
+    if (!doc || !doc.hoaId || doc.hoaId !== viewer.hoaId) throw new Error("Template not found.");
     await ctx.db.patch(args.id, { templateText: args.templateText, updatedAt: Date.now() });
     return null;
   },
@@ -79,13 +91,18 @@ export const createDraft = mutation({
     }),
   },
   handler: async (ctx, args) => {
-    const all = await ctx.db.query("letterTemplateDocs").collect();
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const all = await ctx.db
+      .query("letterTemplateDocs")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
     for (const doc of all) {
       if (doc.status === "active") {
         await ctx.db.patch(doc._id, { status: "draft", updatedAt: Date.now() });
       }
     }
     return await ctx.db.insert("letterTemplateDocs", {
+      hoaId: viewer.hoaId,
       ...args,
       status: "active",
       createdAt: Date.now(),
@@ -98,7 +115,13 @@ export const createDraft = mutation({
 export const activate = mutation({
   args: { id: v.id("letterTemplateDocs") },
   handler: async (ctx, args) => {
-    const all = await ctx.db.query("letterTemplateDocs").collect();
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const target = await ctx.db.get(args.id);
+    if (!target || !target.hoaId || target.hoaId !== viewer.hoaId) throw new Error("Template not found.");
+    const all = await ctx.db
+      .query("letterTemplateDocs")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
     for (const doc of all) {
       if (doc.status === "active" && doc._id !== args.id) {
         await ctx.db.patch(doc._id, { status: "draft", updatedAt: Date.now() });

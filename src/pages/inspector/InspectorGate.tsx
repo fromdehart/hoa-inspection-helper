@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
-import { hasRole } from "@/lib/auth";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
 
@@ -10,7 +11,8 @@ export default function InspectorGate() {
   const location = useLocation();
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
-  const canInspect = hasRole(user, "inspector") || hasRole(user, "admin");
+  const viewer = useQuery(api.tenancy.viewerContext, isSignedIn ? {} : "skip");
+  const canInspect = viewer?.role === "inspector" || viewer?.role === "admin";
 
   useEffect(() => {
     if (!isLoaded) {
@@ -38,7 +40,7 @@ export default function InspectorGate() {
     authLog("InspectorGate", "blocked_not_inspector", {
       path: location.pathname,
       user: authUserSnapshot(user),
-      hint: "Assign inspector or admin in Clerk publicMetadata.role / roles.",
+      hint: "Assign inspector or admin via user HOA membership.",
     });
   }, [isLoaded, isSignedIn, canInspect, user, location.pathname]);
 
@@ -49,6 +51,10 @@ export default function InspectorGate() {
   if (!isSignedIn) {
     persistSignInReturnPath(location.pathname);
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
+  }
+
+  if (viewer === undefined) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   if (!canInspect) {

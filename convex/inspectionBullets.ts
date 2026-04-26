@@ -20,6 +20,10 @@ export const generateFromInspectorNotes = action({
     ctx,
     args,
   ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const viewer = await ctx.runQuery(api.tenancy.viewerContext, {});
+    if (viewer.role !== "admin" && viewer.role !== "inspector") {
+      return { ok: false, error: "Inspector or admin access required" };
+    }
     const property = await ctx.runQuery(api.properties.get, { id: args.propertyId });
     if (!property) {
       return { ok: false, error: "Property not found" };

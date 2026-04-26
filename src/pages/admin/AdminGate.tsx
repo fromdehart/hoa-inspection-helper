@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
-import { getUserRole, hasRole } from "@/lib/auth";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
 
@@ -10,11 +11,11 @@ export default function AdminGate() {
   const location = useLocation();
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
-  const role = getUserRole(user);
-  const isAdmin = hasRole(user, "admin");
+  const viewer = useQuery(api.tenancy.viewerContext, isSignedIn ? {} : "skip");
+  const role = viewer?.role ?? null;
+  const isAdmin = role === "admin";
 
   useEffect(() => {
-    const metaKey = JSON.stringify(user?.publicMetadata ?? {});
     if (!isLoaded) {
       authLog("AdminGate", "clerk_loading", { path: location.pathname });
       return;
@@ -24,26 +25,25 @@ export default function AdminGate() {
       isSignedIn,
       primaryRole: role,
       user: authUserSnapshot(user),
-      metaKey,
     });
   }, [isLoaded, isSignedIn, role, user, location.pathname]);
 
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !hasRole(user, "admin")) return;
+    if (!isLoaded || !isSignedIn || !isAdmin) return;
     authLog("AdminGate", "redirect_dashboard", { to: "/admin/dashboard" });
     navigate("/admin/dashboard", { replace: true });
-  }, [isLoaded, isSignedIn, user, navigate]);
+  }, [isLoaded, isSignedIn, isAdmin, navigate]);
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
-    if (hasRole(user, "admin")) return;
+    if (isAdmin) return;
     authLog("AdminGate", "blocked_not_admin", {
       path: location.pathname,
       primaryRole: role,
       user: authUserSnapshot(user),
-      hint: "Set publicMetadata.role or publicMetadata.roles in Clerk Dashboard for this user.",
+      hint: "Assign a user HOA membership with admin role.",
     });
-  }, [isLoaded, isSignedIn, role, user, location.pathname]);
+  }, [isLoaded, isSignedIn, role, isAdmin, user, location.pathname]);
 
   if (!isLoaded) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
@@ -52,6 +52,10 @@ export default function AdminGate() {
   if (!isSignedIn) {
     persistSignInReturnPath(location.pathname);
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
+  }
+
+  if (viewer === undefined) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   if (!isAdmin) {

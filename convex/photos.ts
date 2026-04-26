@@ -1,13 +1,17 @@
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
+import { requireViewerRole } from "./lib/tenantAuth";
 
 export const listByProperty = query({
   args: { propertyId: v.id("properties") },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.propertyId);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) return [];
     const photos = await ctx.db
       .query("photos")
-      .withIndex("by_property", (q) => q.eq("propertyId", args.propertyId))
+      .withIndex("by_hoa_property", (q) => q.eq("hoaId", viewer.hoaId).eq("propertyId", args.propertyId))
       .collect();
     return photos.sort((a, b) => a.uploadedAt - b.uploadedAt);
   },
@@ -17,7 +21,11 @@ export const listByProperty = query({
 export const listForZipExport = query({
   args: {},
   handler: async (ctx) => {
-    const photos = await ctx.db.query("photos").collect();
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const photos = await ctx.db
+      .query("photos")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
     const out: Array<{
       photoId: string;
       publicUrl: string;
@@ -105,13 +113,20 @@ export const create = mutation({
     thumbnailPublicUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
     const hasFull = !!(args.filePath && args.publicUrl);
     const hasThumb = !!(args.thumbnailFilePath && args.thumbnailPublicUrl);
     if (!hasFull && !hasThumb) {
       throw new Error("Provide full-size and/or thumbnail paths.");
     }
 
+    const property = await ctx.db.get(args.propertyId);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) {
+      throw new Error("Property not found.");
+    }
+
     const photoId = await ctx.db.insert("photos", {
+      hoaId: viewer.hoaId,
       propertyId: args.propertyId,
       section: args.section,
       ...(hasFull ? { filePath: args.filePath, publicUrl: args.publicUrl } : {}),
@@ -121,7 +136,6 @@ export const create = mutation({
       uploadedAt: Date.now(),
       analysisStatus: hasFull ? "done" : "pending",
     });
-    const property = await ctx.db.get(args.propertyId);
     if (property?.status === "notStarted") {
       await ctx.db.patch(args.propertyId, { status: "inProgress" });
     }
@@ -138,11 +152,13 @@ export const setFullImage = mutation({
     publicUrl: v.string(),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
     const p = await ctx.db.get(args.id);
     if (!p) throw new Error("Photo not found.");
     if (p.propertyId !== args.propertyId) {
       throw new Error("Photo does not belong to this property.");
     }
+    if (p.hoaId !== viewer.hoaId) throw new Error("Photo not found.");
     await ctx.db.patch(args.id, {
       filePath: args.filePath,
       publicUrl: args.publicUrl,
@@ -155,6 +171,9 @@ export const setFullImage = mutation({
 export const updateNote = mutation({
   args: { id: v.id("photos"), note: v.string() },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const photo = await ctx.db.get(args.id);
+    if (!photo || photo.hoaId !== viewer.hoaId) throw new Error("Photo not found.");
     await ctx.db.patch(args.id, { inspectorNote: args.note });
     return null;
   },
@@ -170,6 +189,14 @@ export const removeForInspector = action({
     propertyId: v.id("properties"),
   },
   handler: async (ctx, args) => {
+    const viewer = await ctx.runQuery(api.tenancy.viewerContext, {});
+    if (viewer.role !== "admin" && viewer.role !== "inspector") {
+      throw new Error("Inspector or admin access required.");
+    }
+    const property = await ctx.runQuery(internal.properties.getInternal, { id: args.propertyId });
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) {
+      throw new Error("Property not found.");
+    }
     const { paths } = await ctx.runQuery(internal.photos.getUploadPathsForRemove, args);
     await ctx.runMutation(internal.photos.removeRecord, args);
 

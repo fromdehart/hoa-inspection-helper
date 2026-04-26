@@ -22,6 +22,8 @@ import type * as letterTemplateDocs from "../letterTemplateDocs.js";
 import type * as letterTemplateIngest from "../letterTemplateIngest.js";
 import type * as letters from "../letters.js";
 import type * as lib_letterBulletFewShot from "../lib/letterBulletFewShot.js";
+import type * as lib_tenantAuth from "../lib/tenantAuth.js";
+import type * as multiHoa from "../multiHoa.js";
 import type * as openai from "../openai.js";
 import type * as photos from "../photos.js";
 import type * as properties from "../properties.js";
@@ -29,6 +31,7 @@ import type * as resend from "../resend.js";
 import type * as streets from "../streets.js";
 import type * as templateRender from "../templateRender.js";
 import type * as templates from "../templates.js";
+import type * as tenancy from "../tenancy.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -48,6 +51,8 @@ declare const fullApi: ApiFromModules<{
   letterTemplateIngest: typeof letterTemplateIngest;
   letters: typeof letters;
   "lib/letterBulletFewShot": typeof lib_letterBulletFewShot;
+  "lib/tenantAuth": typeof lib_tenantAuth;
+  multiHoa: typeof multiHoa;
   openai: typeof openai;
   photos: typeof photos;
   properties: typeof properties;
@@ -55,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   streets: typeof streets;
   templateRender: typeof templateRender;
   templates: typeof templates;
+  tenancy: typeof tenancy;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

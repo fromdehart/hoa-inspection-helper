@@ -2,12 +2,37 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 export default defineSchema({
+  hoas: defineTable({
+    name: v.string(),
+    slug: v.string(),
+    status: v.union(v.literal("active"), v.literal("inactive")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_slug", ["slug"]),
+
+  userHoaMemberships: defineTable({
+    clerkUserId: v.string(),
+    hoaId: v.id("hoas"),
+    role: v.union(v.literal("admin"), v.literal("inspector")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clerk_user", ["clerkUserId"])
+    .index("by_hoa", ["hoaId"])
+    .index("by_hoa_role", ["hoaId", "role"]),
+
   streets: defineTable({
+    hoaId: v.optional(v.id("hoas")),
     name: v.string(),
     createdAt: v.number(),
-  }).index("by_name", ["name"]),
+  })
+    .index("by_name", ["name"])
+    .index("by_hoa_name", ["hoaId", "name"])
+    .index("by_hoa", ["hoaId"]),
 
   properties: defineTable({
+    hoaId: v.optional(v.id("hoas")),
     streetId: v.id("streets"),
     address: v.string(),
     houseNumber: v.number(),
@@ -41,10 +66,14 @@ export default defineSchema({
     generatedLetterAt: v.optional(v.number()),
   })
     .index("by_street", ["streetId"])
+    .index("by_hoa_street", ["hoaId", "streetId"])
+    .index("by_hoa", ["hoaId"])
     .index("by_token", ["accessToken"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_hoa_status", ["hoaId", "status"]),
 
   photos: defineTable({
+    hoaId: v.optional(v.id("hoas")),
     propertyId: v.id("properties"),
     section: v.union(
       v.literal("front"),
@@ -65,9 +94,13 @@ export default defineSchema({
       v.literal("done"),
       v.literal("error"),
     ),
-  }).index("by_property", ["propertyId"]),
+  })
+    .index("by_property", ["propertyId"])
+    .index("by_hoa_property", ["hoaId", "propertyId"])
+    .index("by_hoa", ["hoaId"]),
 
   fixPhotos: defineTable({
+    hoaId: v.optional(v.id("hoas")),
     propertyId: v.id("properties"),
     filePath: v.string(),
     publicUrl: v.string(),
@@ -80,21 +113,32 @@ export default defineSchema({
     ),
     verificationNote: v.optional(v.string()),
   })
-    .index("by_property", ["propertyId"]),
+    .index("by_property", ["propertyId"])
+    .index("by_hoa_property", ["hoaId", "propertyId"])
+    .index("by_hoa", ["hoaId"]),
 
   aiConfig: defineTable({
+    hoaId: v.optional(v.id("hoas")),
     key: v.string(),
     value: v.string(),
     updatedAt: v.number(),
-  }).index("by_key", ["key"]),
+  })
+    .index("by_key", ["key"])
+    .index("by_hoa_key", ["hoaId", "key"])
+    .index("by_hoa", ["hoaId"]),
 
   templates: defineTable({
+    hoaId: v.optional(v.id("hoas")),
     type: v.union(v.literal("report"), v.literal("letter")),
     content: v.string(),
     updatedAt: v.number(),
-  }).index("by_type", ["type"]),
+  })
+    .index("by_type", ["type"])
+    .index("by_hoa_type", ["hoaId", "type"])
+    .index("by_hoa", ["hoaId"]),
 
   letterTemplateDocs: defineTable({
+    hoaId: v.optional(v.id("hoas")),
     fileName: v.string(),
     fileType: v.union(v.literal("docx"), v.literal("pdf")),
     sourcePublicUrl: v.string(),
@@ -127,5 +171,8 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     activatedAt: v.optional(v.number()),
-  }).index("by_status", ["status"]),
+  })
+    .index("by_status", ["status"])
+    .index("by_hoa_status", ["hoaId", "status"])
+    .index("by_hoa", ["hoaId"]),
 });

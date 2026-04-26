@@ -4,6 +4,7 @@ import {
   buildLetterHtmlSync,
   DEFAULT_LETTER_TEMPLATE,
 } from "./letterBody";
+import { requireViewerRole } from "./lib/tenantAuth";
 
 export const list = query({
   args: {
@@ -15,14 +16,20 @@ export const list = query({
     )),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
     let properties;
     if (args.streetId) {
+      const street = await ctx.db.get(args.streetId);
+      if (!street || street.hoaId !== viewer.hoaId) return [];
       properties = await ctx.db
         .query("properties")
-        .withIndex("by_street", (q) => q.eq("streetId", args.streetId!))
+        .withIndex("by_hoa_street", (q) => q.eq("hoaId", viewer.hoaId).eq("streetId", args.streetId!))
         .collect();
     } else {
-      properties = await ctx.db.query("properties").collect();
+      properties = await ctx.db
+        .query("properties")
+        .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+        .collect();
     }
     if (args.status) {
       properties = properties.filter((p) => p.status === args.status);
@@ -34,7 +41,10 @@ export const list = query({
 export const get = query({
   args: { id: v.id("properties") },
   handler: async (ctx, args) => {
-    return ctx.db.get(args.id);
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) return null;
+    return property;
   },
 });
 
@@ -76,16 +86,18 @@ export const importFromCSV = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
     let created = 0;
     let skipped = 0;
     for (const row of args.rows) {
       // Find or create street
       let streetDoc = await ctx.db
         .query("streets")
-        .withIndex("by_name", (q) => q.eq("name", row.streetName))
+        .withIndex("by_hoa_name", (q) => q.eq("hoaId", viewer.hoaId).eq("name", row.streetName))
         .first();
       if (!streetDoc) {
         const streetId = await ctx.db.insert("streets", {
+          hoaId: viewer.hoaId,
           name: row.streetName,
           createdAt: Date.now(),
         });
@@ -104,6 +116,7 @@ export const importFromCSV = mutation({
       }
 
       await ctx.db.insert("properties", {
+        hoaId: viewer.hoaId,
         streetId: streetDoc._id,
         address: row.address,
         houseNumber: row.houseNumber,
@@ -128,6 +141,9 @@ export const updateStatus = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     await ctx.db.patch(args.id, { status: args.status });
     return null;
   },
@@ -136,6 +152,9 @@ export const updateStatus = mutation({
 export const updateEmail = mutation({
   args: { id: v.id("properties"), email: v.string() },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     await ctx.db.patch(args.id, { email: args.email });
     return null;
   },
@@ -144,6 +163,9 @@ export const updateEmail = mutation({
 export const updateHomeownerNames = mutation({
   args: { id: v.id("properties"), homeownerNames: v.string() },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     await ctx.db.patch(args.id, { homeownerNames: args.homeownerNames });
     return null;
   },
@@ -161,6 +183,9 @@ export const updateAdminPropertyFields = mutation({
     priorOwnerLetterNotes2024: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     const { id, ...fields } = args;
     await ctx.db.patch(id, fields);
     return null;
@@ -193,15 +218,17 @@ const summerRowValidator = v.object({
 export const bulkUpsertSummer2025 = mutation({
   args: { rows: v.array(summerRowValidator) },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
     let created = 0;
     let updated = 0;
     for (const row of args.rows) {
       let streetDoc = await ctx.db
         .query("streets")
-        .withIndex("by_name", (q) => q.eq("name", row.streetName))
+        .withIndex("by_hoa_name", (q) => q.eq("hoaId", viewer.hoaId).eq("name", row.streetName))
         .first();
       if (!streetDoc) {
         const streetId = await ctx.db.insert("streets", {
+          hoaId: viewer.hoaId,
           name: row.streetName,
           createdAt: Date.now(),
         });
@@ -211,7 +238,7 @@ export const bulkUpsertSummer2025 = mutation({
 
       const onStreet = await ctx.db
         .query("properties")
-        .withIndex("by_street", (q) => q.eq("streetId", streetDoc._id))
+        .withIndex("by_hoa_street", (q) => q.eq("hoaId", viewer.hoaId).eq("streetId", streetDoc._id))
         .collect();
       const existing = onStreet.find((p) => p.houseNumber === row.houseNumber);
 
@@ -241,6 +268,7 @@ export const bulkUpsertSummer2025 = mutation({
         updated++;
       } else {
         await ctx.db.insert("properties", {
+          hoaId: viewer.hoaId,
           streetId: streetDoc._id,
           address: row.address,
           houseNumber: row.houseNumber,
@@ -274,13 +302,14 @@ const priorLetterRowValidator = v.object({
 export const bulkPatchPriorOwnerLetterNotes2024 = mutation({
   args: { rows: v.array(priorLetterRowValidator) },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
     let patched = 0;
     let skippedNoStreet = 0;
     let skippedNoProperty = 0;
     for (const row of args.rows) {
       const streetDoc = await ctx.db
         .query("streets")
-        .withIndex("by_name", (q) => q.eq("name", row.streetName))
+        .withIndex("by_hoa_name", (q) => q.eq("hoaId", viewer.hoaId).eq("name", row.streetName))
         .first();
       if (!streetDoc) {
         skippedNoStreet++;
@@ -288,7 +317,7 @@ export const bulkPatchPriorOwnerLetterNotes2024 = mutation({
       }
       const onStreet = await ctx.db
         .query("properties")
-        .withIndex("by_street", (q) => q.eq("streetId", streetDoc._id))
+        .withIndex("by_hoa_street", (q) => q.eq("hoaId", viewer.hoaId).eq("streetId", streetDoc._id))
         .collect();
       const existing = onStreet.find((p) => p.houseNumber === row.houseNumber);
       if (!existing) {
@@ -323,6 +352,9 @@ export const patchAiLetterBullets = internalMutation({
 export const updateInspectorNotes = mutation({
   args: { id: v.id("properties"), inspectorNotes: v.string() },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     await ctx.db.patch(args.id, { inspectorNotes: args.inspectorNotes });
     return null;
   },
@@ -331,6 +363,9 @@ export const updateInspectorNotes = mutation({
 export const updateAiLetterBullets = mutation({
   args: { id: v.id("properties"), aiLetterBullets: v.string() },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     await ctx.db.patch(args.id, {
       aiLetterBullets: args.aiLetterBullets,
       aiLetterBulletsAt: Date.now(),
@@ -346,6 +381,9 @@ export const completeHouseCapture = mutation({
     inspectorNotes: v.string(),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     await ctx.db.patch(args.id, {
       inspectorNotes: args.inspectorNotes,
       status: "complete",
@@ -361,6 +399,9 @@ export const saveGeneratedLetterHtml = mutation({
     html: v.string(),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
     await ctx.db.patch(args.id, {
       generatedLetterHtml: args.html,
       generatedLetterAt: Date.now(),
@@ -376,12 +417,13 @@ export const completeHouseAndSaveLetter = mutation({
     inspectorNotes: v.string(),
   },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
     const property = await ctx.db.get(args.id);
-    if (!property) throw new Error("Property not found");
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
 
     const templateDoc = await ctx.db
       .query("templates")
-      .withIndex("by_type", (q) => q.eq("type", "letter"))
+      .withIndex("by_hoa_type", (q) => q.eq("hoaId", viewer.hoaId).eq("type", "letter"))
       .first();
     const templateContent = templateDoc?.content ?? DEFAULT_LETTER_TEMPLATE;
 
@@ -422,8 +464,9 @@ export const completeHouseAndSaveLetter = mutation({
 export const getLetterHtml = query({
   args: { id: v.id("properties") },
   handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
     const p = await ctx.db.get(args.id);
-    if (!p) return null;
+    if (!p || p.hoaId !== viewer.hoaId) return null;
     return { html: p.generatedLetterHtml ?? null, generatedLetterAt: p.generatedLetterAt };
   },
 });
@@ -432,7 +475,11 @@ export const getLetterHtml = query({
 export const listGeneratedLetterBodies = query({
   args: {},
   handler: async (ctx) => {
-    const all = await ctx.db.query("properties").collect();
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const all = await ctx.db
+      .query("properties")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
     return all
       .filter((p) => p.generatedLetterHtml && p.generatedLetterHtml.length > 0)
       .map((p) => ({

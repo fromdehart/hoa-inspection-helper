@@ -22,12 +22,9 @@ export default function HomeownerPortal() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const property = useQuery(api.properties.getByToken, { token: token ?? "" });
-  const fixPhotos = useQuery(
-    api.fixPhotos.listByProperty,
-    property ? { propertyId: property._id as Id<"properties"> } : "skip",
-  );
+  const fixPhotos = useQuery(api.fixPhotos.listByToken, token ? { token } : "skip");
 
-  const createFixPhoto = useMutation(api.fixPhotos.create);
+  const createFixPhoto = useMutation(api.fixPhotos.createByToken);
 
   if (property === undefined) {
     return (
@@ -56,7 +53,7 @@ export default function HomeownerPortal() {
     try {
       const result = await uploadPhoto(file, pid, "fix");
       await createFixPhoto({
-        propertyId: pid,
+        token: token ?? "",
         filePath: result.filePath,
         publicUrl: result.publicUrl,
       });

@@ -1,10 +1,9 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
-import { useClerk, useUser } from "@clerk/clerk-react";
+import { useClerk } from "@clerk/clerk-react";
 import { Menu } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
-import { hasRole } from "@/lib/auth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import JSZip from "jszip";
 
@@ -51,8 +50,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { signOut } = useClerk();
-  const { user } = useUser();
-  const canInspect = hasRole(user, "inspector") || hasRole(user, "admin");
+  const viewer = useQuery(api.tenancy.viewerContext, {});
+  const canInspect = viewer?.role === "inspector" || viewer?.role === "admin";
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [letterFilter, setLetterFilter] = useState<LetterFilter>("all");
   const [search, setSearch] = useState("");

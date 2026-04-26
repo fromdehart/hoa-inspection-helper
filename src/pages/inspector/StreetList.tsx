@@ -1,17 +1,16 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "convex/react";
-import { useClerk, useUser } from "@clerk/clerk-react";
+import { useClerk } from "@clerk/clerk-react";
 import { Menu } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
-import { hasRole } from "@/lib/auth";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 
 export default function StreetList() {
   const navigate = useNavigate();
   const { signOut } = useClerk();
-  const { user } = useUser();
-  const canAdmin = hasRole(user, "admin");
+  const viewer = useQuery(api.tenancy.viewerContext, {});
+  const canAdmin = viewer?.role === "admin";
   const [inspectorMenuOpen, setInspectorMenuOpen] = useState(false);
 
   const streets = useQuery(api.streets.list);

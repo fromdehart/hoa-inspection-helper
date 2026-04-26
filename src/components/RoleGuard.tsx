@@ -1,7 +1,9 @@
 import { ReactNode, useEffect, useMemo } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
-import { AppRole, getUserRoles } from "@/lib/auth";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { AppRole } from "@/lib/auth";
 import { persistSignInReturnPath } from "@/lib/postSignInRedirect";
 import { authLog, authUserSnapshot } from "@/lib/authLog";
 
@@ -14,7 +16,8 @@ export default function RoleGuard({ allow, children }: RoleGuardProps) {
   const { isLoaded, isSignedIn } = useAuth();
   const { user } = useUser();
   const location = useLocation();
-  const roles = getUserRoles(user);
+  const viewer = useQuery(api.tenancy.viewerContext, isSignedIn ? {} : "skip");
+  const roles = useMemo(() => (viewer?.role ? [viewer.role] : []), [viewer?.role]);
   const allowedList = useMemo(() => (Array.isArray(allow) ? allow : [allow]), [allow]);
   const allowedOk = useMemo(
     () => allowedList.some((role) => roles.includes(role)),
@@ -53,6 +56,10 @@ export default function RoleGuard({ allow, children }: RoleGuardProps) {
   if (!isSignedIn) {
     persistSignInReturnPath(location.pathname);
     return <Navigate to="/sign-in" replace state={{ from: location.pathname }} />;
+  }
+
+  if (viewer === undefined) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   if (!allowedOk) {

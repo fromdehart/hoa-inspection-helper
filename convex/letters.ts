@@ -1,12 +1,16 @@
 import { action } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { api } from "./_generated/api";
 import { v } from "convex/values";
 import { mergeTokenTemplateTextToHtml, mergeUploadedTemplateToHtml } from "./templateRender";
 
 export const generate = action({
   args: { propertyId: v.id("properties") },
   handler: async (ctx, args): Promise<{ html: string }> => {
-    const property = await ctx.runQuery(internal.properties.getInternal, { id: args.propertyId });
+    const viewer = await ctx.runQuery(api.tenancy.viewerContext, {});
+    if (viewer.role !== "admin") {
+      return { html: "<p>Admin access is required to generate letters.</p>" };
+    }
+    const property = await ctx.runQuery(api.properties.get, { id: args.propertyId });
     if (!property) {
       return { html: "<p>Property not found.</p>" };
     }
@@ -52,6 +56,10 @@ export const generate = action({
 export const send = action({
   args: { propertyId: v.id("properties") },
   handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+    const viewer = await ctx.runQuery(api.tenancy.viewerContext, {});
+    if (viewer.role !== "admin") {
+      return { success: false, error: "Admin access is required to send letters." };
+    }
     const property = await ctx.runQuery(api.properties.get, { id: args.propertyId });
     if (!property?.email) {
       return { success: false, error: "No homeowner email on record" };

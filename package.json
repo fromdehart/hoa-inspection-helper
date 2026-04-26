@@ -16,7 +16,8 @@
     "lint": "eslint .",
     "import:summer2025": "tsx scripts/import-summer-2025.ts",
     "import:real-notes": "tsx scripts/import-real-notes-docx.ts",
-    "build:fewshot-bullets": "tsx scripts/build-letter-bullet-fewshot.ts"
+    "build:fewshot-bullets": "tsx scripts/build-letter-bullet-fewshot.ts",
+    "seed:ridge-top-terrace": "tsx scripts/seed-ridge-top-terrace.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.6",
