@@ -577,7 +577,7 @@ export default function PropertyCapture() {
           </div>
           <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3 mt-3 space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-gray-800">Letter bullets (AI)</p>
+              <p className="text-sm font-semibold text-gray-800">Inspection Notes</p>
               <button
                 type="button"
                 disabled={aiBulletsBusy || !note.trim()}
@@ -591,7 +591,7 @@ export default function PropertyCapture() {
                     if (!r.ok) alert(r.error);
                   } catch (e) {
                     console.error(e);
-                    alert("Could not generate letter bullets.");
+                    alert("Could not generate inspection notes.");
                   } finally {
                     setAiBulletsBusy(false);
                   }

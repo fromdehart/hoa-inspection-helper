@@ -338,7 +338,7 @@ export default function PropertyReview() {
 
               <div className="rounded border p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-medium">Letter bullets (AI)</p>
+                  <p className="text-sm font-medium">Summarized Inspedction Notes</p>
                   <Button
                     type="button"
                     size="sm"
@@ -348,10 +348,10 @@ export default function PropertyReview() {
                       setAiBulletsBusy(true);
                       try {
                         const r = await generateAiLetterBullets({ propertyId: pid });
-                        if (r.ok) showToast("Letter bullets generated");
+                        if (r.ok) showToast("Inspection notes generated");
                         else showToast(r.error);
                       } catch {
-                        showToast("Failed to generate letter bullets");
+                        showToast("Failed to generate inspection notes");
                       } finally {
                         setAiBulletsBusy(false);
                       }
