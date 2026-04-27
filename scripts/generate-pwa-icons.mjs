@@ -3,7 +3,8 @@
  * Run: npm run pwa:icons
  */
 import sharp from "sharp";
-import { readFileSync, mkdirSync } from "node:fs";
+import pngToIco from "png-to-ico";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -11,6 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 const svgPath = join(root, "public/favicon.svg");
 const outDir = join(root, "public/icons");
+const faviconIcoPath = join(root, "public/favicon.ico");
 
 mkdirSync(outDir, { recursive: true });
 const input = readFileSync(svgPath);
@@ -34,4 +36,11 @@ await sharp(input)
   .png()
   .toFile(join(outDir, "pwa-512x512-maskable.png"));
 
-console.log("Wrote PWA icons to public/icons/");
+const icoSizes = [16, 32, 48];
+const icoPngBuffers = await Promise.all(
+  icoSizes.map((size) => sharp(input).resize(size, size).png().toBuffer()),
+);
+const icoBuffer = await pngToIco(icoPngBuffers);
+writeFileSync(faviconIcoPath, icoBuffer);
+
+console.log("Wrote PWA icons to public/icons/ and public/favicon.ico");
