@@ -76,6 +76,10 @@ After DNS points to your host (e.g. Vercel), align these so auth, CORS, and link
 - **Upload server** ([server/index.js](server/index.js)): set `ALLOWED_ORIGIN=https://happierblock.com` (or the canonical origin you use) so inspector uploads work from production.
 - **Resend**: verify sending domain; set `RESEND_FROM` like `Happier Block <noreply@happierblock.com>` once the domain is verified.
 
+### PWA (install on phone)
+
+Production builds use **vite-plugin-pwa** (service worker + web manifest). Icons are generated from `public/favicon.svg` via `npm run pwa:icons` (also runs before `npm run build`). Manual install checks: [docs/pwa-verification.md](docs/pwa-verification.md).
+
 ### Deploy
 
 ```bash

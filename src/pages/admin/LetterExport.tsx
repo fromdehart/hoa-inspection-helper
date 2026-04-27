@@ -4,7 +4,6 @@ import { useQuery } from "convex/react";
 import { useClerk } from "@clerk/clerk-react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
-import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
@@ -17,62 +16,33 @@ async function letterHtmlToPdfBlob(html: string): Promise<Blob> {
   host.style.position = "fixed";
   host.style.left = "-9999px";
   host.style.top = "0";
+  host.style.boxSizing = "border-box";
   host.style.width = "816px";
-  host.style.padding = "0";
+  // Small horizontal padding helps prevent list markers from appearing clipped.
+  host.style.padding = "0 6px";
   host.style.background = "#fff";
+  host.style.color = "#000";
   host.innerHTML = html;
   document.body.appendChild(host);
   try {
-    const canvas = await html2canvas(host, {
-      scale: 2,
-      useCORS: true,
-      logging: false,
-      backgroundColor: "#ffffff",
-    });
     const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
     const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
     const margin = 36;
     const maxW = pageW - margin * 2;
-    const maxH = pageH - margin * 2;
 
-    const scale = maxW / canvas.width;
-    const pageSlicePx = Math.floor(maxH / scale);
-    let y = 0;
-    let pageIdx = 0;
-
-    while (y < canvas.height) {
-      const sliceHeight = Math.min(pageSlicePx, canvas.height - y);
-      const pageCanvas = document.createElement("canvas");
-      pageCanvas.width = canvas.width;
-      pageCanvas.height = sliceHeight;
-
-      const pageCtx = pageCanvas.getContext("2d");
-      if (!pageCtx) throw new Error("Could not create 2D context for PDF page");
-
-      pageCtx.fillStyle = "#ffffff";
-      pageCtx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-      pageCtx.drawImage(
-        canvas,
-        0,
-        y,
-        canvas.width,
-        sliceHeight,
-        0,
-        0,
-        canvas.width,
-        sliceHeight,
-      );
-
-      const imgData = pageCanvas.toDataURL("image/png");
-      const outH = sliceHeight * scale;
-
-      if (pageIdx > 0) pdf.addPage();
-      pdf.addImage(imgData, "PNG", margin, margin, maxW, outH);
-
-      y += sliceHeight;
-      pageIdx++;
-    }
+    await pdf.html(host, {
+      x: margin,
+      y: margin,
+      width: maxW,
+      windowWidth: host.scrollWidth,
+      autoPaging: "text",
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      },
+    });
 
     return pdf.output("blob");
   } finally {

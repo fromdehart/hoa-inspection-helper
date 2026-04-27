@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
@@ -38,15 +39,46 @@ const STEPS = [
   { title: "Notify", body: "Generate letters and track what’s been sent to homeowners.", emoji: "📬" },
 ] as const;
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+};
+
 export default function MarketingLanding() {
   const navigate = useNavigate();
   const { isLoaded, isSignedIn } = useAuth();
   const viewer = useQuery(api.tenancy.viewerContext, isLoaded && isSignedIn ? {} : "skip");
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+
+  useEffect(() => {
+    setIsStandalone(window.matchMedia("(display-mode: standalone)").matches);
+    const onBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    setInstallPrompt(null);
+  };
 
   return (
     <div className="min-h-screen gradient-hero flex flex-col">
       {!(isLoaded && isSignedIn) && (
-        <div className="absolute top-4 right-4 z-[60] sm:top-6 sm:right-6">
+        <div className="absolute top-4 right-4 z-[60] flex flex-wrap items-center justify-end gap-2 sm:top-6 sm:right-6">
+          {installPrompt && !isStandalone && (
+            <button
+              type="button"
+              onClick={() => void handleInstallClick()}
+              className="rounded-full border border-emerald-400/50 bg-emerald-500/90 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-emerald-400 transition-colors"
+            >
+              Install app
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate("/login")}
