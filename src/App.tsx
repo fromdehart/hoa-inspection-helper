@@ -4,6 +4,7 @@ import Landing from "./pages/Landing";
 import AdminGate from "./pages/admin/AdminGate";
 import Dashboard from "./pages/admin/Dashboard";
 import Settings from "./pages/admin/Settings";
+import Members from "./pages/admin/Members";
 import PropertyReview from "./pages/admin/PropertyReview";
 import LetterExport from "./pages/admin/LetterExport";
 import InspectorGate from "./pages/inspector/InspectorGate";
@@ -33,6 +34,14 @@ const App = () => {
             element={
               <RoleGuard allow="admin">
                 <Settings />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/admin/members"
+            element={
+              <RoleGuard allow="admin">
+                <Members />
               </RoleGuard>
             }
           />

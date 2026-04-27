@@ -23,6 +23,8 @@ import type * as letterTemplateIngest from "../letterTemplateIngest.js";
 import type * as letters from "../letters.js";
 import type * as lib_letterBulletFewShot from "../lib/letterBulletFewShot.js";
 import type * as lib_tenantAuth from "../lib/tenantAuth.js";
+import type * as members from "../members.js";
+import type * as membersNode from "../membersNode.js";
 import type * as multiHoa from "../multiHoa.js";
 import type * as openai from "../openai.js";
 import type * as photos from "../photos.js";
@@ -52,6 +54,8 @@ declare const fullApi: ApiFromModules<{
   letters: typeof letters;
   "lib/letterBulletFewShot": typeof lib_letterBulletFewShot;
   "lib/tenantAuth": typeof lib_tenantAuth;
+  members: typeof members;
+  membersNode: typeof membersNode;
   multiHoa: typeof multiHoa;
   openai: typeof openai;
   photos: typeof photos;

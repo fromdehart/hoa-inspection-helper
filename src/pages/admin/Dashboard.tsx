@@ -233,6 +233,16 @@ export default function Dashboard() {
                     className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
                     onClick={() => {
                       setAdminMenuOpen(false);
+                      navigate("/admin/members");
+                    }}
+                  >
+                    👥 Team Members
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
                       navigate("/admin/letter-export");
                     }}
                   >
@@ -288,6 +298,13 @@ export default function Dashboard() {
                 onClick={() => navigate("/admin/letter-export")}
               >
                 📄 Export PDFs
+              </button>
+              <button
+                type="button"
+                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+                onClick={() => navigate("/admin/members")}
+              >
+                👥 Team Members
               </button>
               <button
                 type="button"

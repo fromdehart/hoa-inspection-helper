@@ -15,6 +15,9 @@ export default defineSchema({
     clerkUserId: v.string(),
     hoaId: v.id("hoas"),
     role: v.union(v.literal("admin"), v.literal("inspector")),
+    email: v.optional(v.string()),
+    fullName: v.optional(v.string()),
+    invitedByClerkUserId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
