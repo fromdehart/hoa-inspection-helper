@@ -19,6 +19,9 @@
     },
     "CLERK_JWT_ISSUER_DOMAIN": {
       "description": "Clerk Frontend API URL (issuer) for Convex auth, e.g. https://your-app.clerk.accounts.dev"
+    },
+    "DEMO_SEED_SECRET": {
+      "description": "Secret for api.demoSeed.seedDemoHappierBlock (min 6 chars; use a long random value on shared deployments). Used by npm run seed:demo."
     }
   }
 }

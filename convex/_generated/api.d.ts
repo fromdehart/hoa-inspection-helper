@@ -14,6 +14,11 @@ import type {
   FunctionReference,
 } from "convex/server";
 import type * as aiConfig from "../aiConfig.js";
+import type * as arcApplicationReview from "../arcApplicationReview.js";
+import type * as arcApplications from "../arcApplications.js";
+import type * as arcDocIngest from "../arcDocIngest.js";
+import type * as arcReferenceDocs from "../arcReferenceDocs.js";
+import type * as demoSeed from "../demoSeed.js";
 import type * as fixPhotos from "../fixPhotos.js";
 import type * as http from "../http.js";
 import type * as inspectionBullets from "../inspectionBullets.js";
@@ -21,7 +26,9 @@ import type * as letterBody from "../letterBody.js";
 import type * as letterTemplateDocs from "../letterTemplateDocs.js";
 import type * as letterTemplateIngest from "../letterTemplateIngest.js";
 import type * as letters from "../letters.js";
+import type * as lib_arcReviewJson from "../lib/arcReviewJson.js";
 import type * as lib_letterBulletFewShot from "../lib/letterBulletFewShot.js";
+import type * as lib_parseDocxText from "../lib/parseDocxText.js";
 import type * as lib_tenantAuth from "../lib/tenantAuth.js";
 import type * as members from "../members.js";
 import type * as membersNode from "../membersNode.js";
@@ -45,6 +52,11 @@ import type * as tenancy from "../tenancy.js";
  */
 declare const fullApi: ApiFromModules<{
   aiConfig: typeof aiConfig;
+  arcApplicationReview: typeof arcApplicationReview;
+  arcApplications: typeof arcApplications;
+  arcDocIngest: typeof arcDocIngest;
+  arcReferenceDocs: typeof arcReferenceDocs;
+  demoSeed: typeof demoSeed;
   fixPhotos: typeof fixPhotos;
   http: typeof http;
   inspectionBullets: typeof inspectionBullets;
@@ -52,7 +64,9 @@ declare const fullApi: ApiFromModules<{
   letterTemplateDocs: typeof letterTemplateDocs;
   letterTemplateIngest: typeof letterTemplateIngest;
   letters: typeof letters;
+  "lib/arcReviewJson": typeof lib_arcReviewJson;
   "lib/letterBulletFewShot": typeof lib_letterBulletFewShot;
+  "lib/parseDocxText": typeof lib_parseDocxText;
   "lib/tenantAuth": typeof lib_tenantAuth;
   members: typeof members;
   membersNode: typeof membersNode;

@@ -18,7 +18,8 @@
     "import:summer2025": "tsx scripts/import-summer-2025.ts",
     "import:real-notes": "tsx scripts/import-real-notes-docx.ts",
     "build:fewshot-bullets": "tsx scripts/build-letter-bullet-fewshot.ts",
-    "seed:ridge-top-terrace": "tsx scripts/seed-ridge-top-terrace.ts"
+    "seed:ridge-top-terrace": "tsx scripts/seed-ridge-top-terrace.ts",
+    "seed:demo": "tsx scripts/seed-demo-hoa.ts"
   },
   "dependencies": {
     "@clerk/backend": "^2.33.3",
@@ -55,7 +56,8 @@
     "react-router-dom": "^6.30.1",
     "resend": "^6.1.0",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

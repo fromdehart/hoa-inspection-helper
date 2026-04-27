@@ -80,6 +80,26 @@ After DNS points to your host (e.g. Vercel), align these so auth, CORS, and link
 
 Production builds use **vite-plugin-pwa** (service worker + web manifest). Icons are generated from `public/favicon.svg` via `npm run pwa:icons` (also runs before `npm run build`). Manual install checks: [docs/pwa-verification.md](docs/pwa-verification.md).
 
+### Demo HOA seed
+
+Creates a **scoped** demo HOA (`slug`: `demo-happier-block`) with fake streets and properties, then assigns **admin** membership to a Clerk user id. It does **not** run the destructive global backfill in `multiHoa.seedRidgeTopTerraceAndBackfill`.
+
+**Warning:** the app uses a **single** `userHoaMemberships` row per Clerk user ([`convex/lib/tenantAuth.ts`](convex/lib/tenantAuth.ts)). Seeding will **move** that user’s membership to the demo HOA if they already belonged elsewhere.
+
+1. Set a secret on Convex (use a long random string on shared deployments): `npx convex env set DEMO_SEED_SECRET "your-secret"`
+2. From your machine (same secret in the shell):
+
+```bash
+export CONVEX_URL="https://YOUR_DEPLOYMENT.convex.cloud"
+export DEMO_SEED_SECRET="same-as-convex-env"
+# Or put DEMO_SEED_SECRET in `.env.local`; `npm run seed:demo` loads it when unset in the shell.
+npm run seed:demo
+```
+
+Optional args: `npm run seed:demo -- <clerkUserId> <adminEmail>` (defaults to the repo’s demo admin Clerk id and `mdehart.ph@gmail.com`). Add `--force` anywhere in the args to insert any missing `DEMO - …` addresses even when the HOA already has 12+ properties (templates, AI config, and demo property enrichment still run every time).
+
+**Verify:** sign in as that Clerk user, open `/admin/dashboard`, confirm HOA name/slug and `DEMO - …` properties, letter template, and that at least one complete demo row has generated letter HTML (and one marked sent). Confirm unrelated HOAs were not modified.
+
 ### Deploy
 
 ```bash

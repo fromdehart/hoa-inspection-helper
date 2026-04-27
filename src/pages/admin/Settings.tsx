@@ -5,68 +5,20 @@ import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { uploadTemplateFile } from "@/lib/uploadClient";
+import { uploadTemplateFile, uploadArcReferenceFile } from "@/lib/uploadClient";
+import {
+  extractPdfTextInBrowser,
+  extractPdfTextWithOcrFallback,
+  fileToBase64,
+  looksLikeRawPdfPayload,
+} from "@/lib/extractPdfText";
 
-async function extractPdfTextInBrowser(file: File): Promise<string> {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/build/pdf.worker.mjs",
-      import.meta.url,
-    ).toString();
-  }
-  const data = new Uint8Array(await file.arrayBuffer());
-  const task = pdfjs.getDocument({ data });
-  const doc = await task.promise;
-  const pages: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const items = (content.items as Array<{ str?: string; transform?: number[]; hasEOL?: boolean }>)
-      .filter((it) => (it.str ?? "").trim().length > 0)
-      .map((it) => {
-        const tr = it.transform ?? [1, 0, 0, 1, 0, 0];
-        return {
-          text: (it.str ?? "").trim(),
-          x: tr[4] ?? 0,
-          y: tr[5] ?? 0,
-          hasEOL: !!it.hasEOL,
-        };
-      });
-    items.sort((a, b) => (Math.abs(a.y - b.y) < 1 ? a.x - b.x : b.y - a.y));
-
-    const lines: Array<{ y: number; parts: string[] }> = [];
-    for (const it of items) {
-      const existing = lines.find((l) => Math.abs(l.y - it.y) < 2.5);
-      if (existing) {
-        existing.parts.push(it.text);
-      } else {
-        lines.push({ y: it.y, parts: [it.text] });
-      }
-    }
-    lines.sort((a, b) => b.y - a.y);
-
-    let pageText = "";
-    let prevY: number | null = null;
-    for (const l of lines) {
-      const lineText = l.parts.join(" ").replace(/\s+/g, " ").trim();
-      if (!lineText) continue;
-      if (prevY != null && Math.abs(prevY - l.y) > 16) {
-        pageText += "\n";
-      }
-      pageText += (pageText ? "\n" : "") + lineText;
-      prevY = l.y;
-    }
-    if (pageText.trim()) pages.push(pageText.trim());
-  }
-  return pages.join("\n\n");
-}
-
-function looksLikeRawPdfPayload(text: string): boolean {
-  const sample = text.slice(0, 2000);
-  if (sample.includes("%PDF-")) return true;
-  const objHits = (sample.match(/\bendobj\b/g) ?? []).length;
-  return objHits >= 2 && /\bstream\b/.test(sample);
+/** Convex may store `templateText: ""`; `??` would hide non-empty `parsedText` and leave the editor blank. */
+function editorBodyFromStoredTemplate(doc: { templateText?: string; parsedText?: string } | null | undefined): string {
+  if (!doc) return "";
+  const custom = doc.templateText;
+  if (typeof custom === "string" && custom.trim().length > 0) return custom;
+  return doc.parsedText ?? "";
 }
 
 export default function Settings() {
@@ -86,6 +38,14 @@ export default function Settings() {
 
   const updateTemplateText = useMutation(api.letterTemplateDocs.updateTemplateText);
   const ingestUploadedTemplate = useAction(api.letterTemplateIngest.ingestUploadedTemplate);
+  const arcRefDocs = useQuery(api.arcReferenceDocs.list, {});
+  const createArcRef = useMutation(api.arcReferenceDocs.create);
+  const removeArcRef = useMutation(api.arcReferenceDocs.remove);
+  const parseDocxBase64 = useAction(api.arcDocIngest.parseDocxBase64);
+  const [arcRefTitle, setArcRefTitle] = useState("");
+  const [arcRefUploading, setArcRefUploading] = useState(false);
+  const [arcRefErr, setArcRefErr] = useState("");
+  const [arcRefOcrHint, setArcRefOcrHint] = useState("");
 
   const flashSaved = (key: string) => {
     setSaved((s) => ({ ...s, [key]: true }));
@@ -128,7 +88,7 @@ export default function Settings() {
     }
     if (loadedTemplateIdRef.current === currentTemplate._id) return;
     loadedTemplateIdRef.current = currentTemplate._id;
-    setDocTemplateText(currentTemplate?.templateText ?? currentTemplate?.parsedText ?? "");
+    setDocTemplateText(editorBodyFromStoredTemplate(currentTemplate));
     setDocSaveState("idle");
   }, [currentTemplate?._id, currentTemplate?.templateText, currentTemplate?.parsedText]);
 
@@ -140,7 +100,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (!currentTemplate?._id) return;
-    if (docTemplateText === (currentTemplate.templateText ?? currentTemplate.parsedText ?? "")) return;
+    if (docTemplateText === editorBodyFromStoredTemplate(currentTemplate)) return;
 
     if (docAutosaveTimerRef.current) clearTimeout(docAutosaveTimerRef.current);
     docAutosaveTimerRef.current = setTimeout(async () => {
@@ -169,7 +129,7 @@ export default function Settings() {
           <h1 className="font-extrabold text-white text-xl">⚙️ Settings</h1>
           <div className="w-20" />
         </div>
-        <p className="text-purple-200 text-xs mt-2 text-center">Letter templates & reference text</p>
+        <p className="text-purple-200 text-xs mt-2 text-center">Letter templates, ARC rules, and reference docs</p>
       </div>
 
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
@@ -271,6 +231,128 @@ export default function Settings() {
                 {docSaveState === "error" && "Autosave failed. Try editing again."}
               </p>
             </div>
+          )}
+        </section>
+
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+          <h2 className="text-lg font-bold text-gray-800">ARC review — reference documents</h2>
+          <p className="text-xs text-muted-foreground">
+            Upload rules, design guidelines, and example decisions. You can select multiple PDF or DOCX files in one
+            go. Text is extracted and used when admins run an AI assist on a property&apos;s Architecture Review
+            Committee (ARC) application.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground mb-1">
+                Title prefix (optional) — if set, each file is stored as “prefix · filename”
+              </p>
+              <Input
+                value={arcRefTitle}
+                onChange={(e) => setArcRefTitle(e.target.value)}
+                placeholder="e.g. 2024 ARC guidelines"
+              />
+            </div>
+            <Button
+              asChild
+              size="sm"
+              type="button"
+              disabled={arcRefUploading}
+              className="bg-[#4f46e5] hover:bg-[#4338ca] text-white shrink-0"
+            >
+              <label htmlFor="arc-ref-upload" className="cursor-pointer">
+                {arcRefUploading ? "Uploading…" : "Upload PDF or DOCX (multiple ok)"}
+              </label>
+            </Button>
+          </div>
+          <Input
+            id="arc-ref-upload"
+            type="file"
+            multiple
+            accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="hidden"
+            onChange={async (e) => {
+              const inputEl = e.currentTarget;
+              const list = e.target.files;
+              if (!list?.length) return;
+              setArcRefUploading(true);
+              setArcRefErr("");
+              setArcRefOcrHint("");
+              const errors: string[] = [];
+              let added = 0;
+              const titlePrefix = arcRefTitle.trim();
+              for (const file of Array.from(list)) {
+                setArcRefOcrHint("");
+                try {
+                  const up = await uploadArcReferenceFile(file);
+                  const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "docx";
+                  let parsedText = "";
+                  if (fileType === "pdf") {
+                    const { text } = await extractPdfTextWithOcrFallback(file, (m) => setArcRefOcrHint(m));
+                    parsedText = text;
+                    if (!parsedText.trim()) {
+                      throw new Error("No readable PDF text after OCR");
+                    }
+                  } else {
+                    const b64 = await fileToBase64(file);
+                    const parsed = await parseDocxBase64({ fileBase64: b64 });
+                    if (parsed.error) throw new Error(parsed.error);
+                    parsedText = parsed.text;
+                    if (!parsedText.trim()) throw new Error("No text in DOCX");
+                  }
+                  const title = titlePrefix ? `${titlePrefix} · ${file.name}` : file.name;
+                  await createArcRef({
+                    title,
+                    fileName: file.name,
+                    fileType,
+                    sourcePublicUrl: up.publicUrl,
+                    sourceFilePath: up.filePath,
+                    parsedText,
+                  });
+                  added++;
+                } catch (err) {
+                  errors.push(`${file.name}: ${String(err)}`);
+                }
+              }
+              setArcRefUploading(false);
+              setArcRefOcrHint("");
+              inputEl.value = "";
+              if (errors.length) {
+                setArcRefErr(errors.join("\n"));
+              }
+              if (added > 0) {
+                if (titlePrefix) setArcRefTitle("");
+                flashSaved("arcRef");
+              }
+            }}
+          />
+          {arcRefOcrHint && <p className="text-xs text-muted-foreground">{arcRefOcrHint}</p>}
+          {arcRefErr && (
+            <p className="text-xs text-red-600 whitespace-pre-wrap max-h-32 overflow-y-auto">{arcRefErr}</p>
+          )}
+          {saved.arcRef && <p className="text-xs text-green-600">Reference document(s) added.</p>}
+
+          {arcRefDocs && arcRefDocs.length > 0 && (
+            <ul className="text-sm border rounded divide-y">
+              {arcRefDocs.map((d) => (
+                <li key={d._id} className="flex flex-wrap items-center justify-between gap-2 p-2">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{d.title}</p>
+                    <p className="text-xs text-muted-foreground">{d.fileName}</p>
+                    <a
+                      href={d.sourcePublicUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-indigo-600 hover:underline"
+                    >
+                      Open file
+                    </a>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" onClick={() => removeArcRef({ id: d._id })}>
+                    Remove
+                  </Button>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </div>

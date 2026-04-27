@@ -36,6 +36,8 @@ export const generateText = action({
     previousResponseId: v.optional(v.string()),
     reasoning: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
     temperature: v.optional(v.number()),
+    /** When set, ask the Responses API for JSON object output (helps structured ARC reviews). */
+    textFormatJsonObject: v.optional(v.boolean()),
   },
   handler: async (_ctx, args) => {
     const apiKey = getApiKey();
@@ -71,6 +73,9 @@ export const generateText = action({
       model,
       input,
     };
+    if (args.textFormatJsonObject) {
+      body.text = { format: { type: "json_object" } };
+    }
     if (args.previousResponseId) {
       body.previous_response_id = args.previousResponseId;
     }

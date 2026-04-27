@@ -140,6 +140,61 @@ export default defineSchema({
     .index("by_hoa_type", ["hoaId", "type"])
     .index("by_hoa", ["hoaId"]),
 
+  /** HOA-level rules, guidelines, and example ARC decisions for AI-assisted review. */
+  arcReferenceDocs: defineTable({
+    hoaId: v.id("hoas"),
+    title: v.string(),
+    fileName: v.string(),
+    fileType: v.union(v.literal("pdf"), v.literal("docx")),
+    sourcePublicUrl: v.string(),
+    sourceFilePath: v.string(),
+    parsedText: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_hoa", ["hoaId"]),
+
+  /** Admin-uploaded Architecture Review Committee application packages per property. */
+  arcApplicationSubmissions: defineTable({
+    hoaId: v.id("hoas"),
+    propertyId: v.id("properties"),
+    createdAt: v.number(),
+    createdByClerkUserId: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("ready"),
+      v.literal("reviewing"),
+      v.literal("complete"),
+      v.literal("error"),
+    ),
+    files: v.array(
+      v.object({
+        fileName: v.string(),
+        fileType: v.union(v.literal("pdf"), v.literal("docx")),
+        sourcePublicUrl: v.string(),
+        sourceFilePath: v.string(),
+        parsedText: v.string(),
+      }),
+    ),
+    verdict: v.optional(
+      v.union(
+        v.literal("likelyApproved"),
+        v.literal("needsMoreInformation"),
+        v.literal("likelyDenied"),
+        v.literal("uncertain"),
+      ),
+    ),
+    /** Structured AI output: { missingInformation, rationale, citationsToRules } plus verdict echo */
+    aiFeedbackJson: v.optional(v.string()),
+    aiModel: v.optional(v.string()),
+    aiReviewAt: v.optional(v.number()),
+    aiError: v.optional(v.string()),
+    /** True if any document body was truncated before sending to the model */
+    promptHadTruncation: v.optional(v.boolean()),
+  })
+    .index("by_hoa", ["hoaId"])
+    .index("by_hoa_property", ["hoaId", "propertyId"]),
+
   letterTemplateDocs: defineTable({
     hoaId: v.optional(v.id("hoas")),
     fileName: v.string(),

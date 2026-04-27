@@ -3,6 +3,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
+import type { ArcReviewFeedback } from "../../../convex/lib/arcReviewJson";
+import { uploadArcApplicationFile } from "@/lib/uploadClient";
+import { extractPdfTextWithOcrFallback, fileToBase64 } from "@/lib/extractPdfText";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,6 +17,30 @@ type AdminFieldsDraft = {
   previousInspectionSummary: string;
   priorOwnerLetterNotes2024: string;
 };
+
+type ArcPendingFile = {
+  fileName: string;
+  fileType: "pdf" | "docx";
+  sourcePublicUrl: string;
+  sourceFilePath: string;
+  parsedText: string;
+};
+
+const VERDICT_LABEL: Record<NonNullable<ArcReviewFeedback["verdict"]>, string> = {
+  likelyApproved: "Likely approvable",
+  needsMoreInformation: "Needs more information",
+  likelyDenied: "Likely conflicts with stated rules",
+  uncertain: "Uncertain / needs staff review",
+};
+
+function parseStoredFeedback(json: string | undefined): ArcReviewFeedback | null {
+  if (!json?.trim()) return null;
+  try {
+    return JSON.parse(json) as ArcReviewFeedback;
+  } catch {
+    return null;
+  }
+}
 
 export default function PropertyReview() {
   const navigate = useNavigate();
@@ -44,6 +71,11 @@ export default function PropertyReview() {
     caption?: string;
   } | null>(null);
 
+  const [arcPendingFiles, setArcPendingFiles] = useState<ArcPendingFile[]>([]);
+  const [arcUploadBusy, setArcUploadBusy] = useState(false);
+  const [arcCreateBusy, setArcCreateBusy] = useState(false);
+  const [arcReviewBusyId, setArcReviewBusyId] = useState<Id<"arcApplicationSubmissions"> | null>(null);
+
   const property = useQuery(api.properties.get, { id: pid });
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
   const fixPhotos = useQuery(api.fixPhotos.listByProperty, { propertyId: pid });
@@ -60,6 +92,12 @@ export default function PropertyReview() {
   const sendLetter = useAction(api.letters.send);
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
   const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
+  const arcRefDocs = useQuery(api.arcReferenceDocs.list, {});
+  const arcSubmissions = useQuery(api.arcApplications.listByProperty, { propertyId: pid });
+  const createArcSubmission = useMutation(api.arcApplications.createSubmission);
+  const removeArcSubmission = useMutation(api.arcApplications.removeSubmission);
+  const parseDocxBase64 = useAction(api.arcDocIngest.parseDocxBase64);
+  const runArcReview = useAction(api.arcApplicationReview.runReview);
   const aiBulletsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aiBulletsHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
   const aiBulletsInitializedRef = useRef(false);
@@ -345,6 +383,224 @@ export default function PropertyReview() {
                   Last generated: {new Date(storedLetter.generatedLetterAt).toLocaleString()}
                 </p>
               )}
+            </div>
+
+            <div className="rounded-xl border bg-white p-4 space-y-3">
+              <h2 className="text-lg font-semibold">ARC application (Architecture Review Committee)</h2>
+              <p className="text-xs text-muted-foreground">
+                HOA reference library:{" "}
+                <strong>{arcRefDocs?.length ?? "…"}</strong> document
+                {(arcRefDocs?.length ?? 0) === 1 ? "" : "s"}. Add or manage files in{" "}
+                <button
+                  type="button"
+                  className="text-indigo-600 hover:underline font-medium"
+                  onClick={() => navigate("/admin/settings")}
+                >
+                  Settings
+                </button>
+                .
+              </p>
+              <p className="text-xs rounded-md bg-amber-50 text-amber-900 border border-amber-200 p-2">
+                AI assist is informational only. It does not replace the committee, legal counsel, or recorded
+                decisions.
+              </p>
+
+              <div className="rounded border p-3 space-y-2">
+                <p className="text-sm font-medium">New submission — add files</p>
+                <p className="text-xs text-muted-foreground">
+                  PDF or DOCX. Text-based PDFs extract quickly; scanned PDFs run automatic OCR (slower, first use
+                  downloads the OCR engine). Add one or more files, then save as one submission.
+                </p>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={arcUploadBusy}
+                    asChild
+                  >
+                    <label className="cursor-pointer">
+                      {arcUploadBusy ? "Processing…" : "Add files"}
+                      <input
+                        type="file"
+                        multiple
+                        accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const list = e.target.files;
+                          e.target.value = "";
+                          if (!list?.length) return;
+                          setArcUploadBusy(true);
+                          try {
+                            const next: ArcPendingFile[] = [...arcPendingFiles];
+                            for (const file of Array.from(list)) {
+                              const up = await uploadArcApplicationFile(String(pid), file);
+                              const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "docx";
+                              let parsedText = "";
+                              if (fileType === "pdf") {
+                                try {
+                                  const { text } = await extractPdfTextWithOcrFallback(file);
+                                  parsedText = text;
+                                } catch (err) {
+                                  showToast(`Skipped ${file.name}: ${String(err)}`);
+                                  continue;
+                                }
+                              } else {
+                                const b64 = await fileToBase64(file);
+                                const parsed = await parseDocxBase64({ fileBase64: b64 });
+                                if (parsed.error || !parsed.text.trim()) {
+                                  showToast(`Skipped ${file.name}: ${parsed.error ?? "empty DOCX"}`);
+                                  continue;
+                                }
+                                parsedText = parsed.text;
+                              }
+                              next.push({
+                                fileName: file.name,
+                                fileType,
+                                sourcePublicUrl: up.publicUrl,
+                                sourceFilePath: up.filePath,
+                                parsedText,
+                              });
+                            }
+                            setArcPendingFiles(next);
+                            if (next.length > arcPendingFiles.length) showToast("Files added to package");
+                          } catch {
+                            showToast("Failed to add files");
+                          } finally {
+                            setArcUploadBusy(false);
+                          }
+                        }}
+                      />
+                    </label>
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={arcPendingFiles.length === 0 || arcCreateBusy}
+                    onClick={async () => {
+                      if (arcPendingFiles.length === 0) return;
+                      setArcCreateBusy(true);
+                      try {
+                        await createArcSubmission({ propertyId: pid, files: arcPendingFiles });
+                        setArcPendingFiles([]);
+                        showToast("ARC submission saved");
+                      } catch (err) {
+                        showToast(String(err));
+                      } finally {
+                        setArcCreateBusy(false);
+                      }
+                    }}
+                  >
+                    {arcCreateBusy ? "Saving…" : "Save submission"}
+                  </Button>
+                  {arcPendingFiles.length > 0 && (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setArcPendingFiles([])}>
+                      Clear package
+                    </Button>
+                  )}
+                </div>
+                {arcPendingFiles.length > 0 && (
+                  <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
+                    {arcPendingFiles.map((f, i) => (
+                      <li key={`${f.fileName}-${i}`}>{f.fileName}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="rounded border p-3 space-y-2">
+                <p className="text-sm font-medium">Submissions</p>
+                {!arcSubmissions?.length ? (
+                  <p className="text-xs text-muted-foreground">No submissions yet.</p>
+                ) : (
+                  <ul className="space-y-3">
+                    {arcSubmissions.map((sub) => {
+                      const fb = parseStoredFeedback(sub.aiFeedbackJson);
+                      const busy = arcReviewBusyId === sub._id;
+                      return (
+                        <li key={sub._id} className="rounded-md border bg-muted/30 p-3 text-sm space-y-2">
+                          <div className="flex flex-wrap justify-between gap-2">
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(sub.createdAt).toLocaleString()} · {sub.status}
+                              {sub.verdict ? ` · ${VERDICT_LABEL[sub.verdict]}` : ""}
+                            </span>
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={
+                                  busy || sub.status === "reviewing" || !sub.files.some((f) => f.parsedText.trim())
+                                }
+                                onClick={async () => {
+                                  setArcReviewBusyId(sub._id);
+                                  try {
+                                    const r = await runArcReview({ submissionId: sub._id });
+                                    if (r.ok) showToast("AI review complete");
+                                    else showToast("error" in r ? r.error : "Review failed");
+                                  } catch {
+                                    showToast("Review failed");
+                                  } finally {
+                                    setArcReviewBusyId(null);
+                                  }
+                                }}
+                              >
+                                {busy || sub.status === "reviewing" ? "Reviewing…" : "Run AI review"}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => removeArcSubmission({ id: sub._id })}
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          </div>
+                          {sub.promptHadTruncation && (
+                            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                              Some reference or application text was truncated before sending to the model.
+                            </p>
+                          )}
+                          {sub.status === "error" && sub.aiError && (
+                            <p className="text-xs text-red-600">{sub.aiError}</p>
+                          )}
+                          {fb && (
+                            <div className="text-xs space-y-2 border-t pt-2 mt-1">
+                              <p>
+                                <span className="font-semibold">Verdict:</span> {VERDICT_LABEL[fb.verdict]}
+                              </p>
+                              {fb.missingInformation.length > 0 && (
+                                <div>
+                                  <p className="font-semibold">Missing information</p>
+                                  <ul className="list-disc pl-4">
+                                    {fb.missingInformation.map((m, i) => (
+                                      <li key={i}>{m}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {fb.citationsToRules.length > 0 && (
+                                <div>
+                                  <p className="font-semibold">Rule references</p>
+                                  <ul className="list-disc pl-4">
+                                    {fb.citationsToRules.map((m, i) => (
+                                      <li key={i}>{m}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              <p className="whitespace-pre-wrap">
+                                <span className="font-semibold">Rationale:</span> {fb.rationale}
+                              </p>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             </div>
 
             <div className="rounded-xl border bg-white p-4 space-y-3">
