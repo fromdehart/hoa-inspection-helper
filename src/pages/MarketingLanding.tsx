@@ -2,7 +2,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
 import { ONE_SHOT_VERSION } from "@/version";
-import { clearSignInReturnPath } from "@/lib/postSignInRedirect";
 import { api } from "../../convex/_generated/api";
 
 const FEATURES = [
@@ -44,17 +43,20 @@ export default function MarketingLanding() {
   const { isLoaded, isSignedIn } = useAuth();
   const viewer = useQuery(api.tenancy.viewerContext, isLoaded && isSignedIn ? {} : "skip");
 
-  const goAdmin = () => {
-    clearSignInReturnPath();
-    navigate("/admin");
-  };
-  const goInspector = () => {
-    clearSignInReturnPath();
-    navigate("/inspector");
-  };
-
   return (
     <div className="min-h-screen gradient-hero flex flex-col">
+      {!(isLoaded && isSignedIn) && (
+        <div className="absolute top-4 right-4 z-[60] sm:top-6 sm:right-6">
+          <button
+            type="button"
+            onClick={() => navigate("/login")}
+            className="rounded-full border border-white/35 bg-white/15 px-4 py-2 text-sm font-bold text-white shadow-md hover:bg-white/25 transition-colors"
+          >
+            Sign in
+          </button>
+        </div>
+      )}
+
       {isLoaded && isSignedIn && (
         <div className="sticky top-0 z-50 border-b border-white/15 bg-slate-900/80 px-4 py-2 backdrop-blur-md">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2 text-sm text-white">
@@ -96,22 +98,18 @@ export default function MarketingLanding() {
           <p className="text-blue-100 text-lg sm:text-xl font-medium leading-relaxed">
             HOA exterior inspections made clearer—from the first import to the last letter.
           </p>
-          <div className="mt-8 flex flex-col sm:flex-row gap-3 justify-center">
-            <button
-              type="button"
-              className="btn-bounce rounded-2xl bg-white px-6 py-3 text-base font-bold text-violet-700 shadow-lg hover:bg-violet-50 transition-colors"
-              onClick={goAdmin}
-            >
-              Sign in as admin
-            </button>
-            <button
-              type="button"
-              className="btn-bounce rounded-2xl border-2 border-white/40 bg-white/10 px-6 py-3 text-base font-bold text-white hover:bg-white/15 transition-colors"
-              onClick={goInspector}
-            >
-              Sign in as inspector
-            </button>
-          </div>
+          {!(isLoaded && isSignedIn) && (
+            <p className="mt-8 text-sm text-white/70">
+              <button
+                type="button"
+                className="font-semibold text-white underline-offset-4 hover:underline"
+                onClick={() => navigate("/login")}
+              >
+                Sign in
+              </button>{" "}
+              to open the admin or inspector app.
+            </p>
+          )}
         </div>
 
         <section className="w-full max-w-4xl mb-14">
@@ -148,19 +146,15 @@ export default function MarketingLanding() {
         </section>
 
         <footer className="mt-auto w-full max-w-3xl border-t border-white/10 pt-8 text-center">
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 text-sm">
-            <button type="button" className="text-white/80 underline-offset-2 hover:text-white hover:underline" onClick={goAdmin}>
-              Admin sign-in
-            </button>
-            <span className="hidden sm:inline text-white/30">·</span>
+          {!(isLoaded && isSignedIn) && (
             <button
               type="button"
-              className="text-white/80 underline-offset-2 hover:text-white hover:underline"
-              onClick={goInspector}
+              className="text-sm font-semibold text-white/85 underline-offset-4 hover:text-white hover:underline"
+              onClick={() => navigate("/login")}
             >
-              Inspector sign-in
+              Sign in
             </button>
-          </div>
+          )}
           <p className="mt-6 text-white/25 text-xs">Happier Block v{ONE_SHOT_VERSION}</p>
           <p className="mt-2 text-white/20 text-xs">© {new Date().getFullYear()} Happier Block</p>
         </footer>

@@ -12,12 +12,14 @@ import StreetList from "./pages/inspector/StreetList";
 import PropertyList from "./pages/inspector/PropertyList";
 import PropertyCapture from "./pages/inspector/PropertyCapture";
 import SignInPage from "./pages/auth/SignInPage";
+import RoleSignInLanding from "./pages/RoleSignInLanding";
 
 const App = () => {
   return (
     <BrowserRouter>
       <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<RoleSignInLanding />} />
           {/* Clerk MFA / email steps use /sign-in/factor-one, etc. — splat keeps them on this page */}
           <Route path="/sign-in/*" element={<SignInPage />} />
           <Route path="/admin" element={<AdminGate />} />
