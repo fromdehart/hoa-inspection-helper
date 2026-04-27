@@ -1,6 +1,9 @@
-# Launch URL — hoa-inspection-helper
+# Launch URL — Happier Block
 
-Deployed: Mon Mar 23 02:07:42 AM EDT 2026
-URL: https://hoa-inspection-helper.vercel.app
+Production: **https://happierblock.com**
+
+Previous preview: https://hoa-inspection-helper.vercel.app (legacy)
+
 GitHub: https://github.com/fromdehart/hoa-inspection-helper
+
 Convex: https://dashboard.convex.dev

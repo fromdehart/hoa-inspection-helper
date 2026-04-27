@@ -105,7 +105,7 @@ export default function LetterExport() {
       const url = URL.createObjectURL(out);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `hoa-inspection-letters-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `happier-block-letters-${new Date().toISOString().slice(0, 10)}.zip`;
       a.click();
       URL.revokeObjectURL(url);
       setLog(`Done (${letters.length} PDFs).`);

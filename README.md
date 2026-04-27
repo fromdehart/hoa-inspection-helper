@@ -67,6 +67,15 @@ If you prefer to configure manually:
 4. Add your Resend API key, EMAIL_FROM, and APP_BASE_URL
 5. Push Convex env vars: `npx convex env set RESEND_API_KEY "re_..."` (and EMAIL_FROM, APP_BASE_URL, OPENAI_API_KEY as needed)
 
+### Happier Block production (`happierblock.com`)
+
+After DNS points to your host (e.g. Vercel), align these so auth, CORS, and links match **https://happierblock.com**:
+
+- **Convex**: `npx convex env set PUBLIC_BASE_URL "https://happierblock.com"` — used for homeowner/portal URLs in backend ([convex/properties.ts](convex/properties.ts)). Set `CLERK_SECRET_KEY` if you use server-side member provisioning.
+- **Clerk dashboard**: Allowed origins and redirect URLs must include `https://happierblock.com` (and `https://www.happierblock.com` if you use `www`).
+- **Upload server** ([server/index.js](server/index.js)): set `ALLOWED_ORIGIN=https://happierblock.com` (or the canonical origin you use) so inspector uploads work from production.
+- **Resend**: verify sending domain; set `RESEND_FROM` like `Happier Block <noreply@happierblock.com>` once the domain is verified.
+
 ### Deploy
 
 ```bash

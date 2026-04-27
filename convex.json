@@ -12,7 +12,7 @@
       "description": "Email address to send from"
     },
     "APP_BASE_URL": {
-      "description": "Base URL for the application (e.g., https://your-challenge.vercel.app)"
+      "description": "Base URL for the application (e.g., https://happierblock.com)"
     },
     "OPENAI_API_KEY": {
       "description": "OpenAI API key for AI functionality"

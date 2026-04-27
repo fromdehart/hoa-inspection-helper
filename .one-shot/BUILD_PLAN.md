@@ -1,4 +1,4 @@
-# Build Plan: HOA Inspection Helper
+# Build Plan: Happier Block (HOA inspection app)
 
 ## 1. Overview
 
@@ -667,7 +667,7 @@ export default defineSchema({
 - Behavior: Check localStorage for existing roles on mount; show quick-access links if already
   logged in. Otherwise show role selection.
 - Key UI: Full-height centered layout (`flex flex-col items-center justify-center min-h-screen gap-8`).
-  App title "HOA Inspection Helper". Subtitle "Select your role to continue". Two large buttons
+  App title "Happier Block". Marketing landing + sign-in CTAs. Two large buttons
   using existing Button component: "Admin Login" → navigate("/admin"), "Inspector Login" →
   navigate("/inspector"). If localStorage has "hoa_admin"="true", show "Admin Dashboard →" link.
   If "hoa_inspector"="true", show "Inspector Streets →" link.

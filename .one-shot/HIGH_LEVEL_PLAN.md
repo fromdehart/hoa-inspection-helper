@@ -1,4 +1,4 @@
-# High-Level Plan: HOA Inspection Helper
+# High-Level Plan: Happier Block (HOA inspection app)
 
 ## What It Does
 A mobile-first web application that streamlines HOA property inspections end-to-end: inspectors walk streets capturing photos via a fast "Next" workflow, AI analyzes each photo as it is uploaded and shows real-time violation feedback, and homeowners receive email links to a portal where they can view violations and upload proof of fixes for AI-assisted verification.

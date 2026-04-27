@@ -159,7 +159,7 @@ export default function Dashboard() {
       const url = URL.createObjectURL(out);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `hoa-street-photos-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `happier-block-street-photos-${new Date().toISOString().slice(0, 10)}.zip`;
       a.click();
       URL.revokeObjectURL(url);
       setToast(`Photo export complete: ${added} added${skipped ? `, ${skipped} skipped` : ""}`);
@@ -196,8 +196,8 @@ export default function Dashboard() {
       <div className="gradient-admin sticky top-0 z-50 shrink-0 border-b border-white/10 px-4 pt-10 pb-6 shadow-md">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 pr-1">
-            <p className="text-purple-200 text-sm font-medium uppercase tracking-widest">Admin</p>
-            <h1 className="text-white font-extrabold text-2xl">HOA Dashboard 📋</h1>
+            <p className="text-purple-200 text-sm font-medium uppercase tracking-widest">Happier Block</p>
+            <h1 className="text-white font-extrabold text-2xl">Admin dashboard 📋</h1>
           </div>
           <div className="relative z-[1] flex shrink-0 items-center gap-2">
             <Sheet open={adminMenuOpen} onOpenChange={setAdminMenuOpen}>
