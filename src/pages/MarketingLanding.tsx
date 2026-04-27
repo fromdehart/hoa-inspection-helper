@@ -98,18 +98,6 @@ export default function MarketingLanding() {
           <p className="text-blue-100 text-lg sm:text-xl font-medium leading-relaxed">
             HOA exterior inspections made clearer—from the first import to the last letter.
           </p>
-          {!(isLoaded && isSignedIn) && (
-            <p className="mt-8 text-sm text-white/70">
-              <button
-                type="button"
-                className="font-semibold text-white underline-offset-4 hover:underline"
-                onClick={() => navigate("/login")}
-              >
-                Sign in
-              </button>{" "}
-              to open the admin or inspector app.
-            </p>
-          )}
         </div>
 
         <section className="w-full max-w-4xl mb-14">
