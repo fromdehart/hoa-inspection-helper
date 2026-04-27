@@ -35,4 +35,6 @@ uploads/
 # Sample / local HOA data (not committed)
 Summer 2025 Inspections.xlsx
 RTT HOA CC Individual Inspection Owner letter 2025 general.docx
-RTT HOA CC Individual Inspection Owner letter 2025 general.docx.pdf
+
+# PDF binaries (upload via app or keep locally; not in repo)
+*.pdf
