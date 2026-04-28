@@ -36,7 +36,28 @@ const VERDICT_LABEL: Record<NonNullable<ArcReviewFeedback["verdict"]>, string> =
 function parseStoredFeedback(json: string | undefined): ArcReviewFeedback | null {
   if (!json?.trim()) return null;
   try {
-    return JSON.parse(json) as ArcReviewFeedback;
+    const parsed = JSON.parse(json) as Partial<ArcReviewFeedback> & { missingInformation?: unknown };
+    const mustHaveNow = Array.isArray(parsed.mustHaveNow)
+      ? parsed.mustHaveNow.filter((x): x is string => typeof x === "string")
+      : Array.isArray(parsed.missingInformation)
+        ? parsed.missingInformation.filter((x): x is string => typeof x === "string")
+        : [];
+    const helpfulButOptional = Array.isArray(parsed.helpfulButOptional)
+      ? parsed.helpfulButOptional.filter((x): x is string => typeof x === "string")
+      : [];
+    const citationsToRules = Array.isArray(parsed.citationsToRules)
+      ? parsed.citationsToRules.filter((x): x is string => typeof x === "string")
+      : [];
+    const rationale = typeof parsed.rationale === "string" ? parsed.rationale : "";
+    const verdict = parsed.verdict;
+    if (!verdict || !VERDICT_LABEL[verdict]) return null;
+    return {
+      verdict,
+      mustHaveNow,
+      helpfulButOptional,
+      rationale,
+      citationsToRules,
+    };
   } catch {
     return null;
   }
@@ -428,12 +449,14 @@ export default function PropertyReview() {
                         className="hidden"
                         onChange={async (e) => {
                           const list = e.target.files;
-                          e.target.value = "";
                           if (!list?.length) return;
+                          // Copy before clearing input — clearing `value` empties the live FileList in browsers.
+                          const files = Array.from(list);
+                          e.target.value = "";
                           setArcUploadBusy(true);
                           try {
                             const next: ArcPendingFile[] = [...arcPendingFiles];
-                            for (const file of Array.from(list)) {
+                            for (const file of files) {
                               const up = await uploadArcApplicationFile(String(pid), file);
                               const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "docx";
                               let parsedText = "";
@@ -570,11 +593,21 @@ export default function PropertyReview() {
                               <p>
                                 <span className="font-semibold">Verdict:</span> {VERDICT_LABEL[fb.verdict]}
                               </p>
-                              {fb.missingInformation.length > 0 && (
+                              {fb.mustHaveNow.length > 0 && (
                                 <div>
-                                  <p className="font-semibold">Missing information</p>
+                                  <p className="font-semibold">Must-have now</p>
                                   <ul className="list-disc pl-4">
-                                    {fb.missingInformation.map((m, i) => (
+                                    {fb.mustHaveNow.map((m, i) => (
+                                      <li key={i}>{m}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {fb.helpfulButOptional.length > 0 && (
+                                <div>
+                                  <p className="font-semibold">Helpful but optional</p>
+                                  <ul className="list-disc pl-4">
+                                    {fb.helpfulButOptional.map((m, i) => (
                                       <li key={i}>{m}</li>
                                     ))}
                                   </ul>

@@ -9,7 +9,7 @@ import {
 
 const MAX_REF_CHARS = 36_000;
 const MAX_APP_CHARS = 54_000;
-const AI_MODEL = "gpt-4o-mini";
+const AI_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT = `You are an assistant to an HOA Architecture Review Committee (ARC). You compare a homeowner's modification application to the HOA's reference materials (rules, guidelines, and example decisions).
 
@@ -19,11 +19,15 @@ Rules:
 - Output ONLY valid JSON (no markdown fences, no commentary outside JSON) with this exact shape:
 {
   "verdict": "likelyApproved" | "needsMoreInformation" | "likelyDenied" | "uncertain",
-  "missingInformation": string[],
+  "mustHaveNow": string[],
+  "helpfulButOptional": string[],
   "rationale": string,
   "citationsToRules": string[]
 }
-- verdict guidance: likelyApproved if the application appears complete and consistent with stated rules; needsMoreInformation if required details, drawings, materials, dimensions, or signatures appear missing; likelyDenied if the proposal clearly conflicts with stated rules; uncertain if the materials are insufficient to tell.
+- verdict guidance: likelyApproved if the application appears complete and consistent with stated rules; needsMoreInformation if required details are missing; likelyDenied if the proposal clearly conflicts with stated rules; uncertain if the materials are insufficient to tell.
+- put only clearly required blockers in mustHaveNow.
+- put nice-to-have or context-dependent improvements in helpfulButOptional.
+- do not escalate to expensive engineering artifacts (site surveys, drainage studies, etc.) unless the references clearly require them for this specific project scope.
 - citationsToRules: short quotes or paraphrased rule labels drawn from the reference section only.`;
 
 function buildLabeledSection(title: string, body: string, maxChars: number): { text: string; truncated: boolean } {
@@ -102,9 +106,20 @@ export const runReview = action({
       body: f.parsedText,
     }));
     const appCorpus = buildCorpus(appParts, MAX_APP_CHARS);
+    const reviewSettings = await ctx.runQuery(api.arcReviewSettings.get, {});
 
     const promptHadTruncation = refCorpus.truncated || appCorpus.truncated;
     const userMessage = `Property address: ${property.address}
+
+## HOA review posture (admin-configured)
+Review posture: ${reviewSettings.reviewPosture}
+Admin guidance:
+${reviewSettings.adminGuidance?.trim() || "(none)"}
+
+Interpretation guidance:
+- strict: enforce listed requirements conservatively.
+- practical: enforce clear requirements but avoid over-escalating asks for minor work.
+- homeownerFriendly: prioritize actionable, low-friction asks and avoid intimidating language.
 
 ## HOA reference materials
 ${refCorpus.text}
@@ -122,7 +137,6 @@ Return the JSON object now.`;
       systemPrompt: SYSTEM_PROMPT,
       prompt: userMessage,
       model: AI_MODEL,
-      temperature: 0.2,
       textFormatJsonObject: true,
     });
 

@@ -6,7 +6,8 @@ export type ArcVerdict =
 
 export type ArcReviewFeedback = {
   verdict: ArcVerdict;
-  missingInformation: string[];
+  mustHaveNow: string[];
+  helpfulButOptional: string[];
   rationale: string;
   citationsToRules: string[];
 };
@@ -35,14 +36,19 @@ export function parseArcReviewResponse(raw: string): ArcReviewFeedback | null {
     const parsed = JSON.parse(t) as Record<string, unknown>;
     const verdict = parsed.verdict;
     if (!isVerdict(verdict)) return null;
-    const missingInformation = Array.isArray(parsed.missingInformation)
-      ? parsed.missingInformation.filter((x): x is string => typeof x === "string")
+    const mustHaveNow = Array.isArray(parsed.mustHaveNow)
+      ? parsed.mustHaveNow.filter((x): x is string => typeof x === "string")
+      : Array.isArray(parsed.missingInformation)
+        ? parsed.missingInformation.filter((x): x is string => typeof x === "string")
+        : [];
+    const helpfulButOptional = Array.isArray(parsed.helpfulButOptional)
+      ? parsed.helpfulButOptional.filter((x): x is string => typeof x === "string")
       : [];
     const rationale = typeof parsed.rationale === "string" ? parsed.rationale : "";
     const citationsToRules = Array.isArray(parsed.citationsToRules)
       ? parsed.citationsToRules.filter((x): x is string => typeof x === "string")
       : [];
-    return { verdict, missingInformation, rationale, citationsToRules };
+    return { verdict, mustHaveNow, helpfulButOptional, rationale, citationsToRules };
   } catch {
     return null;
   }
@@ -52,7 +58,8 @@ export function fallbackFeedbackFromRaw(raw: string, errorHint?: string): ArcRev
   const trimmed = raw.trim().slice(0, 8000);
   return {
     verdict: "uncertain",
-    missingInformation: [],
+    mustHaveNow: [],
+    helpfulButOptional: [],
     rationale:
       (errorHint ? `${errorHint}\n\n` : "") +
       (trimmed

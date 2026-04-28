@@ -5,6 +5,7 @@ import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { uploadTemplateFile, uploadArcReferenceFile } from "@/lib/uploadClient";
 import {
   extractPdfTextInBrowser,
@@ -42,6 +43,12 @@ export default function Settings() {
   const createArcRef = useMutation(api.arcReferenceDocs.create);
   const removeArcRef = useMutation(api.arcReferenceDocs.remove);
   const parseDocxBase64 = useAction(api.arcDocIngest.parseDocxBase64);
+  const arcReviewSettings = useQuery(api.arcReviewSettings.get, {});
+  const setArcReviewSettings = useMutation(api.arcReviewSettings.set);
+  const [reviewPosture, setReviewPosture] = useState<"strict" | "practical" | "homeownerFriendly">("homeownerFriendly");
+  const [reviewGuidance, setReviewGuidance] = useState("");
+  const [reviewSaveState, setReviewSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const reviewAutosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [arcRefTitle, setArcRefTitle] = useState("");
   const [arcRefUploading, setArcRefUploading] = useState(false);
   const [arcRefErr, setArcRefErr] = useState("");
@@ -79,6 +86,13 @@ export default function Settings() {
   const currentTemplate = activeTemplate ?? latestTemplate;
 
   useEffect(() => {
+    if (!arcReviewSettings) return;
+    setReviewPosture(arcReviewSettings.reviewPosture);
+    setReviewGuidance(arcReviewSettings.adminGuidance ?? "");
+    setReviewSaveState("idle");
+  }, [arcReviewSettings?.reviewPosture, arcReviewSettings?.adminGuidance]);
+
+  useEffect(() => {
     if (!currentTemplate?._id) {
       loadedTemplateIdRef.current = null;
       setDocTemplateText("");
@@ -95,6 +109,7 @@ export default function Settings() {
   useEffect(() => {
     return () => {
       if (docAutosaveTimerRef.current) clearTimeout(docAutosaveTimerRef.current);
+      if (reviewAutosaveRef.current) clearTimeout(reviewAutosaveRef.current);
     };
   }, []);
 
@@ -114,6 +129,27 @@ export default function Settings() {
       }
     }, 900);
   }, [docTemplateText, currentTemplate?._id, currentTemplate?.templateText, currentTemplate?.parsedText, updateTemplateText]);
+
+  useEffect(() => {
+    if (!arcReviewSettings) return;
+    const unchanged =
+      reviewPosture === arcReviewSettings.reviewPosture &&
+      reviewGuidance === (arcReviewSettings.adminGuidance ?? "");
+    if (unchanged) return;
+    if (reviewAutosaveRef.current) clearTimeout(reviewAutosaveRef.current);
+    reviewAutosaveRef.current = setTimeout(async () => {
+      try {
+        setReviewSaveState("saving");
+        await setArcReviewSettings({
+          reviewPosture,
+          adminGuidance: reviewGuidance,
+        });
+        setReviewSaveState("saved");
+      } catch {
+        setReviewSaveState("error");
+      }
+    }, 700);
+  }, [arcReviewSettings, reviewPosture, reviewGuidance, setArcReviewSettings]);
 
   return (
     <div className="min-h-screen bg-[#f8f7ff]">
@@ -232,6 +268,42 @@ export default function Settings() {
               </p>
             </div>
           )}
+        </section>
+
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+          <h2 className="text-lg font-bold text-gray-800">ARC review behavior</h2>
+          <p className="text-xs text-muted-foreground">
+            Tune how strict the AI should be and add local process guidance beyond official documents.
+          </p>
+          <div className="grid gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Review posture</p>
+              <Select value={reviewPosture} onValueChange={(v) => setReviewPosture(v as typeof reviewPosture)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="strict">Strict (compliance-focused)</SelectItem>
+                  <SelectItem value="practical">Practical (balanced)</SelectItem>
+                  <SelectItem value="homeownerFriendly">Homeowner-friendly (least intimidating)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Admin guidance for ARC reviewer model</p>
+              <Textarea
+                value={reviewGuidance}
+                onChange={(e) => setReviewGuidance(e.target.value)}
+                rows={5}
+                placeholder="Example: For simple shrub replacement, do not request site surveys or color palettes. Ask for a rough location sketch and replacement plant photo/reference instead."
+              />
+            </div>
+            <p className="text-xs text-muted-foreground min-h-[1rem]">
+              {reviewSaveState === "saving" && "Saving..."}
+              {reviewSaveState === "saved" && "Saved"}
+              {reviewSaveState === "error" && "Could not save review settings."}
+            </p>
+          </div>
         </section>
 
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">

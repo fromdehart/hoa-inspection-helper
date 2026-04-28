@@ -18,6 +18,7 @@ import type * as arcApplicationReview from "../arcApplicationReview.js";
 import type * as arcApplications from "../arcApplications.js";
 import type * as arcDocIngest from "../arcDocIngest.js";
 import type * as arcReferenceDocs from "../arcReferenceDocs.js";
+import type * as arcReviewSettings from "../arcReviewSettings.js";
 import type * as demoSeed from "../demoSeed.js";
 import type * as fixPhotos from "../fixPhotos.js";
 import type * as http from "../http.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   arcApplications: typeof arcApplications;
   arcDocIngest: typeof arcDocIngest;
   arcReferenceDocs: typeof arcReferenceDocs;
+  arcReviewSettings: typeof arcReviewSettings;
   demoSeed: typeof demoSeed;
   fixPhotos: typeof fixPhotos;
   http: typeof http;
