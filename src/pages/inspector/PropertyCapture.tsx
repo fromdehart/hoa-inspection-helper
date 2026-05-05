@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { ChevronDown, Loader2, Trash2 } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 /** Max parallel uploads per batch (mobile uplink is usually the bottleneck; 4 is a good balance). */
 const UPLOAD_CONCURRENCY = 4;
@@ -25,13 +26,16 @@ const UPLOAD_CONCURRENCY = 4;
 /** Single bucket for new uploads; legacy side/back photos still list with property photos. */
 const UPLOAD_SECTION = "front" as const;
 
-type PropertyStatus = "notStarted" | "inProgress" | "complete";
+type PropertyStatus = "notStarted" | "inProgress" | "review" | "complete";
+
+type NoteSection = "front" | "side" | "back";
 
 /** Dot on header trigger + small swatch in menu rows. */
 const STATUS_DOT: Record<PropertyStatus, string> = {
   notStarted: "bg-slate-300 shadow-inner ring-1 ring-slate-500/35",
   /** Amber reads clearly on the cyan inspector header (avoids blue-on-blue). */
   inProgress: "bg-amber-300 shadow-inner ring-1 ring-amber-600/40",
+  review: "bg-violet-400 shadow-inner ring-1 ring-violet-700/35",
   complete: "bg-emerald-400 shadow-inner ring-1 ring-emerald-700/35",
 };
 
@@ -47,6 +51,11 @@ const STATUS_THEME: Record<PropertyStatus, { full: string; menuBtn: string }> = 
     menuBtn:
       "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold bg-amber-100 text-amber-950 hover:bg-amber-200/90 active:bg-amber-200 transition-colors",
   },
+  review: {
+    full: "Review",
+    menuBtn:
+      "flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-semibold bg-violet-100 text-violet-950 hover:bg-violet-200/90 active:bg-violet-200 transition-colors",
+  },
   complete: {
     full: "Complete",
     menuBtn:
@@ -54,7 +63,7 @@ const STATUS_THEME: Record<PropertyStatus, { full: string; menuBtn: string }> = 
   },
 };
 
-const STATUS_ORDER: PropertyStatus[] = ["notStarted", "inProgress", "complete"];
+const STATUS_ORDER: PropertyStatus[] = ["notStarted", "inProgress", "review", "complete"];
 
 export default function PropertyCapture() {
   const navigate = useNavigate();
@@ -70,8 +79,11 @@ export default function PropertyCapture() {
   const [pendingSlotIds, setPendingSlotIds] = useState<string[]>([]);
   const activeUploadBatchesRef = useRef(0);
   const uploadStatsRef = useRef({ started: 0, done: 0, fail: 0 });
-  const [note, setNote] = useState("");
-  const [listening, setListening] = useState(false);
+  const [noteFront, setNoteFront] = useState("");
+  const [noteSide, setNoteSide] = useState("");
+  const [noteBack, setNoteBack] = useState("");
+  const [listeningSection, setListeningSection] = useState<NoteSection | null>(null);
+  const [aiSectionOpen, setAiSectionOpen] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
   const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
   const [aiBulletsDraft, setAiBulletsDraft] = useState("");
@@ -91,7 +103,7 @@ export default function PropertyCapture() {
   const noteAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aiBulletsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteInitializedRef = useRef(false);
-  const lastPersistedNoteRef = useRef("");
+  const lastPersistedNotesRef = useRef({ front: "", side: "", back: "" });
   const aiBulletsInitializedRef = useRef(false);
   const lastPersistedAiBulletsRef = useRef("");
   /** Avoid re-hydrating note from Convex on every refetch (causes textarea + status flash after autosave). */
@@ -99,16 +111,33 @@ export default function PropertyCapture() {
   const aiBulletsHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
 
   const property = useQuery(api.properties.get, { id: pid });
+  const viewer = useQuery(api.tenancy.viewerContext, {});
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
   const streetData = useQuery(
     api.streets.getWithProperties,
     property?.streetId ? { streetId: property.streetId } : "skip",
   );
 
+  const clerkIdsForDisplayNames = useMemo(() => {
+    if (!property) return [] as string[];
+    const ids = [
+      property.inspectionNotesEnteredByClerkUserId,
+      property.inspectionNotesLastUpdatedByClerkUserId,
+      property.inspectionDetailsVerifiedByClerkUserId,
+    ].filter((x): x is string => !!x);
+    return [...new Set(ids)];
+  }, [property]);
+
+  const displayNames = useQuery(
+    api.members.displayNamesByClerkIds,
+    clerkIdsForDisplayNames.length > 0 ? { clerkUserIds: clerkIdsForDisplayNames } : "skip",
+  );
+
   const createPhoto = useMutation(api.photos.create);
   const setFullImage = useMutation(api.photos.setFullImage);
   const removePhotoForInspector = useAction(api.photos.removeForInspector);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
+  const setInspectionVerification = useMutation(api.properties.setInspectionVerification);
   const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
   const updatePropertyStatus = useMutation(api.properties.updateStatus);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
@@ -134,9 +163,21 @@ export default function PropertyCapture() {
     if (noteHydratedForPropertyIdRef.current === pid) return;
 
     noteHydratedForPropertyIdRef.current = pid;
-    const initialNote = property.inspectorNotes ?? "";
-    setNote(initialNote);
-    lastPersistedNoteRef.current = initialNote;
+    const anySection =
+      (property.inspectorNotesFront?.length ?? 0) +
+        (property.inspectorNotesSide?.length ?? 0) +
+        (property.inspectorNotesBack?.length ?? 0) >
+      0;
+    let initialFront = property.inspectorNotesFront ?? "";
+    let initialSide = property.inspectorNotesSide ?? "";
+    let initialBack = property.inspectorNotesBack ?? "";
+    if (!anySection && property.inspectorNotes?.trim()) {
+      initialFront = property.inspectorNotes;
+    }
+    setNoteFront(initialFront);
+    setNoteSide(initialSide);
+    setNoteBack(initialBack);
+    lastPersistedNotesRef.current = { front: initialFront, side: initialSide, back: initialBack };
     noteInitializedRef.current = true;
     setNoteSaveState("idle");
     setLastSavedAt(null);
@@ -181,15 +222,22 @@ export default function PropertyCapture() {
 
   useEffect(() => {
     if (!noteInitializedRef.current) return;
-    if (note === lastPersistedNoteRef.current) return;
+    const cur = { front: noteFront, side: noteSide, back: noteBack };
+    const last = lastPersistedNotesRef.current;
+    if (cur.front === last.front && cur.side === last.side && cur.back === last.back) return;
 
     if (noteAutosaveTimerRef.current) clearTimeout(noteAutosaveTimerRef.current);
 
     noteAutosaveTimerRef.current = setTimeout(async () => {
       try {
         setNoteSaveState("saving");
-        await updateInspectorNotes({ id: pid, inspectorNotes: note });
-        lastPersistedNoteRef.current = note;
+        await updateInspectorNotes({
+          id: pid,
+          inspectorNotesFront: noteFront,
+          inspectorNotesSide: noteSide,
+          inspectorNotesBack: noteBack,
+        });
+        lastPersistedNotesRef.current = { front: noteFront, side: noteSide, back: noteBack };
         setLastSavedAt(Date.now());
         setNoteSaveState("saved");
       } catch (err) {
@@ -197,7 +245,7 @@ export default function PropertyCapture() {
         setNoteSaveState("error");
       }
     }, 1200);
-  }, [note, pid, updateInspectorNotes]);
+  }, [noteFront, noteSide, noteBack, pid, updateInspectorNotes]);
 
   useEffect(() => {
     if (!aiBulletsInitializedRef.current) return;
@@ -372,21 +420,30 @@ export default function PropertyCapture() {
       /* ignore */
     }
     recognitionRef.current = null;
-    setListening(false);
+    setListeningSection(null);
   };
 
-  const handleMic = () => {
-    if (listening) {
+  const appendToSection = (section: NoteSection, chunk: string) => {
+    const t = chunk.trim();
+    if (!t) return;
+    if (section === "front") setNoteFront((prev) => (prev ? `${prev} ${t}` : t).trim());
+    if (section === "side") setNoteSide((prev) => (prev ? `${prev} ${t}` : t).trim());
+    if (section === "back") setNoteBack((prev) => (prev ? `${prev} ${t}` : t).trim());
+  };
+
+  const handleMic = (section: NoteSection) => {
+    if (listeningSection === section) {
       stopBrowserSpeech();
       return;
     }
+    stopBrowserSpeech();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
       alert("Speech recognition is not supported in this browser. Try Chrome.");
       return;
     }
-    setListening(true);
+    setListeningSection(section);
     const recognition = new SpeechRecognitionCtor();
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -399,10 +456,10 @@ export default function PropertyCapture() {
         const r = event.results[i];
         if (r.isFinal) finalChunk += r[0].transcript;
       }
-      if (finalChunk) setNote((prev) => (prev ? `${prev} ${finalChunk}` : finalChunk).trim());
+      if (finalChunk) appendToSection(section, finalChunk);
     };
     recognition.onerror = () => stopBrowserSpeech();
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => setListeningSection(null);
     recognition.start();
   };
 
@@ -412,9 +469,15 @@ export default function PropertyCapture() {
       clearTimeout(noteAutosaveTimerRef.current);
       noteAutosaveTimerRef.current = null;
     }
-    if (note !== lastPersistedNoteRef.current) {
-      await updateInspectorNotes({ id: pid, inspectorNotes: note });
-      lastPersistedNoteRef.current = note;
+    const last = lastPersistedNotesRef.current;
+    if (noteFront !== last.front || noteSide !== last.side || noteBack !== last.back) {
+      await updateInspectorNotes({
+        id: pid,
+        inspectorNotesFront: noteFront,
+        inspectorNotesSide: noteSide,
+        inspectorNotesBack: noteBack,
+      });
+      lastPersistedNotesRef.current = { front: noteFront, side: noteSide, back: noteBack };
     }
   };
 
@@ -433,7 +496,7 @@ export default function PropertyCapture() {
     setNextHouseModalOpen(false);
     try {
       await persistNotesIfDirty();
-      await completeHouse({ id: pid, inspectorNotes: note });
+      await completeHouse({ id: pid });
       navigateAfterLeave();
     } catch (err) {
       console.error(err);
@@ -487,6 +550,15 @@ export default function PropertyCapture() {
       priorBlocks.push({ label: "2024 completed-work / follow-up", text: property.priorCompletedWorkResponse });
     }
   }
+
+  const nameFor = (id?: string) => (!id ? "" : displayNames?.[id]?.trim() || "Team member");
+  const hasAnyNote = !!(noteFront.trim() || noteSide.trim() || noteBack.trim());
+  const lastSaverId = property.inspectionNotesLastUpdatedByClerkUserId;
+  const viewerId = viewer?.clerkUserId;
+  const cannotVerifyOwnNotes =
+    !!lastSaverId && !!viewerId && viewerId === lastSaverId;
+  const isVerified = !!property.inspectionDetailsVerifiedByClerkUserId;
+  const verifyCheckboxDisabled = !isVerified && (!hasAnyNote || cannotVerifyOwnNotes);
 
   return (
     <div className="min-h-screen bg-[#f8f7ff] pb-24 flex flex-col">
@@ -623,85 +695,217 @@ export default function PropertyCapture() {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <h2 className="font-bold text-gray-800 mb-2">📝 Inspection notes</h2>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={5}
-            className="w-full text-base px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-sky-400 resize-none transition-colors"
-          />
-          <div className="mt-2 text-xs text-gray-500 min-h-[1rem]">
-            {noteSaveState === "saving" && "Saving notes..."}
-            {noteSaveState === "saved" &&
-              `Saved${lastSavedAt ? ` at ${new Date(lastSavedAt).toLocaleTimeString()}` : ""}`}
-            {noteSaveState === "error" && "Autosave failed. Your notes will still save on Next House."}
-          </div>
-          <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-3 mt-3 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-gray-800">Inspection Notes</p>
-              <button
-                type="button"
-                disabled={aiBulletsBusy || !note.trim()}
-                className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-violet-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-violet-700 transition-colors"
-                onClick={async () => {
-                  setAiBulletsBusy(true);
-                  try {
-                    await updateInspectorNotes({ id: pid, inspectorNotes: note });
-                    lastPersistedNoteRef.current = note;
-                    const r = await generateAiLetterBullets({ propertyId: pid });
-                    if (!r.ok) alert("error" in r ? r.error : "Could not generate inspection notes.");
-                  } catch (e) {
-                    console.error(e);
-                    alert("Could not generate inspection notes.");
-                  } finally {
-                    setAiBulletsBusy(false);
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-4">
+          <h2 className="font-bold text-gray-800">📝 Inspection notes</h2>
+
+          <Tabs defaultValue="front" className="w-full">
+            <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-xl bg-muted/90 p-1">
+              <TabsTrigger value="front" className="rounded-lg px-2 py-2 text-xs font-semibold sm:text-sm">
+                Front
+              </TabsTrigger>
+              <TabsTrigger value="side" className="rounded-lg px-2 py-2 text-xs font-semibold sm:text-sm">
+                Side
+              </TabsTrigger>
+              <TabsTrigger value="back" className="rounded-lg px-2 py-2 text-xs font-semibold sm:text-sm">
+                Back
+              </TabsTrigger>
+            </TabsList>
+            {(["front", "side", "back"] as const).map((section) => {
+              const label = section === "front" ? "Front" : section === "side" ? "Side" : "Back";
+              const value = section === "front" ? noteFront : section === "side" ? noteSide : noteBack;
+              const setValue = section === "front" ? setNoteFront : section === "side" ? setNoteSide : setNoteBack;
+              const micOn = listeningSection === section;
+              return (
+                <TabsContent key={section} value={section} className="mt-1.5 space-y-1.5 focus-visible:ring-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-gray-700">{label}</p>
+                    <button
+                      type="button"
+                      className={`btn-bounce inline-flex items-center shrink-0 gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                        micOn
+                          ? "bg-red-100 text-red-700 border-2 border-red-400"
+                          : "bg-sky-100 text-sky-800 border-2 border-transparent hover:bg-sky-200"
+                      }`}
+                      onClick={() => handleMic(section)}
+                    >
+                      {micOn ? (
+                        "Stop"
+                      ) : (
+                        <>
+                          <span aria-hidden>🎤</span>
+                          <span>Record</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <textarea
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    rows={6}
+                    className="w-full min-h-[6.25rem] text-base px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-sky-400 resize-none transition-colors"
+                  />
+                </TabsContent>
+              );
+            })}
+          </Tabs>
+
+          {(noteSaveState !== "idle" ||
+            property.inspectionNotesEnteredByClerkUserId ||
+            property.inspectionNotesLastUpdatedByClerkUserId) && (
+            <div className="mt-1 space-y-0.5">
+              {noteSaveState !== "idle" && (
+                <div className="text-xs text-gray-500">
+                  {noteSaveState === "saving" && "Saving notes..."}
+                  {noteSaveState === "saved" &&
+                    `Saved${lastSavedAt ? ` at ${new Date(lastSavedAt).toLocaleTimeString()}` : ""}`}
+                  {noteSaveState === "error" && "Autosave failed. Your notes will still save on Next House."}
+                </div>
+              )}
+
+              {(property.inspectionNotesEnteredByClerkUserId ||
+                property.inspectionNotesLastUpdatedByClerkUserId) && (
+                <div className="text-xs text-gray-600 space-y-0.5">
+                  {property.inspectionNotesEnteredByClerkUserId ? (
+                    <p>
+                      Added by{" "}
+                      <span className="font-medium">{nameFor(property.inspectionNotesEnteredByClerkUserId)}</span>
+                      {property.inspectionNotesEnteredAt != null && (
+                        <span className="text-gray-400">
+                          {" "}
+                          · {new Date(property.inspectionNotesEnteredAt).toLocaleString()}
+                        </span>
+                      )}
+                    </p>
+                  ) : null}
+                  {property.inspectionNotesLastUpdatedByClerkUserId ? (
+                    <p>
+                      Last updated by{" "}
+                      <span className="font-medium">{nameFor(property.inspectionNotesLastUpdatedByClerkUserId)}</span>
+                      {property.inspectionNotesLastUpdatedAt != null && (
+                        <span className="text-gray-400">
+                          {" "}
+                          · {new Date(property.inspectionNotesLastUpdatedAt).toLocaleString()}
+                        </span>
+                      )}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="pt-3">
+            <label
+              className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${
+                verifyCheckboxDisabled
+                  ? "cursor-not-allowed border-gray-200 bg-gray-100/70 opacity-[0.72]"
+                  : "cursor-pointer border-gray-100 bg-gray-50/80"
+              }`}
+              aria-disabled={verifyCheckboxDisabled || undefined}
+            >
+            <input
+              type="checkbox"
+              className={`mt-1 h-4 w-4 shrink-0 rounded border-gray-300 ${verifyCheckboxDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+              checked={isVerified}
+              disabled={verifyCheckboxDisabled}
+              onChange={async (e) => {
+                try {
+                  if (e.target.checked) {
+                    await persistNotesIfDirty();
                   }
-                }}
-              >
-                {aiBulletsBusy ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    Generating…
-                  </span>
-                ) : property?.aiLetterBullets?.trim() ? (
-                  "Regenerate"
-                ) : (
-                  "Generate"
-                )}
-              </button>
-            </div>
-            {property?.aiLetterBulletsAt != null && (
-              <p className="text-xs text-gray-500">
-                Updated {new Date(property.aiLetterBulletsAt).toLocaleString()}
-              </p>
-            )}
-            <textarea
-              value={aiBulletsDraft}
-              onChange={(e) => setAiBulletsDraft(e.target.value)}
-              rows={5}
-              className="w-full text-base px-3 py-2 rounded-xl border border-violet-200 focus:outline-none focus:border-violet-400 resize-y bg-white text-gray-700 transition-colors"
-              placeholder="Optional: turn your raw notes into HOA-style bullets for letters."
+                  await setInspectionVerification({ propertyId: pid, verified: e.target.checked });
+                } catch (err) {
+                  console.error(err);
+                  alert(err instanceof Error ? err.message : "Could not update verification.");
+                }
+              }}
             />
-            <div className="text-xs text-gray-500 min-h-[1rem]">
-              {aiBulletsSaveState === "saving" && "Saving summarized notes..."}
-              {aiBulletsSaveState === "saved" &&
-                `Saved${aiBulletsLastSavedAt ? ` at ${new Date(aiBulletsLastSavedAt).toLocaleString()}` : ""}`}
-              {aiBulletsSaveState === "error" && "Autosave failed. Try editing again."}
-            </div>
+            <span
+              className={`text-sm ${verifyCheckboxDisabled ? "pointer-events-none text-gray-500" : "text-gray-800"}`}
+            >
+              <span className="font-semibold">Verify inspection details</span>
+              <span className={`block text-xs mt-0.5 ${verifyCheckboxDisabled ? "text-gray-400" : "text-gray-500"}`}>
+                Another inspector must confirm. You cannot verify if you last edited these notes.
+              </span>
+              {isVerified && property.inspectionDetailsVerifiedByClerkUserId ? (
+                <span className="block text-xs text-gray-500 mt-1">
+                  Verified by {nameFor(property.inspectionDetailsVerifiedByClerkUserId)}
+                  {property.inspectionDetailsVerifiedAt != null &&
+                    ` · ${new Date(property.inspectionDetailsVerifiedAt).toLocaleString()}`}
+                </span>
+              ) : null}
+            </span>
+            </label>
           </div>
-          <div className="flex flex-wrap items-center gap-2 mt-3">
+
+          <div className="rounded-xl border border-violet-100 bg-violet-50/60 overflow-hidden">
             <button
               type="button"
-              className={`btn-bounce px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                listening
-                  ? "bg-red-100 text-red-700 border-2 border-red-400"
-                  : "bg-sky-100 text-sky-800 border-2 border-transparent hover:bg-sky-200"
-              }`}
-              onClick={handleMic}
+              className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left hover:bg-violet-100/50 transition-colors"
+              onClick={() => setAiSectionOpen((o) => !o)}
             >
-              {listening ? "Stop mic" : "🎤 Record Notes"}
+              <span className="text-sm font-semibold text-gray-800">Generate Standardized Notes</span>
+              <ChevronDown className={`h-5 w-5 shrink-0 text-violet-700 transition-transform ${aiSectionOpen ? "rotate-180" : ""}`} />
             </button>
+            {aiSectionOpen ? (
+              <div className="px-3 pb-3 pt-0 space-y-2 border-t border-violet-100/80">
+                <div className="flex flex-wrap items-center justify-start gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={aiBulletsBusy || !hasAnyNote}
+                    className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-violet-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-violet-700 transition-colors"
+                    onClick={async () => {
+                      setAiBulletsBusy(true);
+                      try {
+                        await updateInspectorNotes({
+                          id: pid,
+                          inspectorNotesFront: noteFront,
+                          inspectorNotesSide: noteSide,
+                          inspectorNotesBack: noteBack,
+                        });
+                        lastPersistedNotesRef.current = { front: noteFront, side: noteSide, back: noteBack };
+                        const r = await generateAiLetterBullets({ propertyId: pid });
+                        if (!r.ok) alert("error" in r ? r.error : "Could not generate inspection notes.");
+                      } catch (e) {
+                        console.error(e);
+                        alert("Could not generate inspection notes.");
+                      } finally {
+                        setAiBulletsBusy(false);
+                      }
+                    }}
+                  >
+                    {aiBulletsBusy ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                        Generating…
+                      </span>
+                    ) : property?.aiLetterBullets?.trim() ? (
+                      "Regenerate"
+                    ) : (
+                      "Generate"
+                    )}
+                  </button>
+                </div>
+                <textarea
+                  value={aiBulletsDraft}
+                  onChange={(e) => setAiBulletsDraft(e.target.value)}
+                  rows={5}
+                  className="w-full text-base px-3 py-2 rounded-xl border border-violet-200 focus:outline-none focus:border-violet-400 resize-y bg-white text-gray-700 transition-colors"
+                  placeholder="Optional standardized bullet list for letters."
+                />
+                {property?.aiLetterBulletsAt != null ? (
+                  <p className="text-xs text-gray-500">
+                    Updated {new Date(property.aiLetterBulletsAt).toLocaleString()}
+                  </p>
+                ) : null}
+                <div className="text-xs text-gray-500 min-h-[1rem]">
+                  {aiBulletsSaveState === "saving" && "Saving summarized notes..."}
+                  {aiBulletsSaveState === "saved" &&
+                    `Saved${aiBulletsLastSavedAt ? ` at ${new Date(aiBulletsLastSavedAt).toLocaleString()}` : ""}`}
+                  {aiBulletsSaveState === "error" && "Autosave failed. Try editing again."}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 

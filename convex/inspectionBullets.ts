@@ -35,7 +35,7 @@ export const generateFromInspectorNotes = action({
 
     const prompt = `Property address: ${property.address}
 
-Raw field notes from the inspector (may include speech-to-text noise):
+Raw field notes from the inspector (labeled Front / Side / Back when provided; may include speech-to-text noise):
 ${raw}
 
 Produce the bullet list now.`;

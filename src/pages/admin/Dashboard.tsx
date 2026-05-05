@@ -7,7 +7,7 @@ import { api } from "../../../convex/_generated/api";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import JSZip from "jszip";
 
-type StatusFilter = "all" | "notStarted" | "inProgress" | "complete";
+type StatusFilter = "all" | "notStarted" | "inProgress" | "review" | "complete";
 type LetterFilter = "all" | "needsGeneration" | "generated" | "sent";
 
 function parseCSV(text: string): Array<{
@@ -44,6 +44,7 @@ function parseCSV(text: string): Array<{
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; emoji: string }> = {
   notStarted: { label: "Not Started", color: "text-gray-600", bg: "bg-gray-100", emoji: "⏳" },
   inProgress: { label: "In Progress", color: "text-amber-700", bg: "bg-amber-100", emoji: "🔍" },
+  review: { label: "Review", color: "text-violet-800", bg: "bg-violet-100", emoji: "👀" },
   complete: { label: "Complete", color: "text-green-700", bg: "bg-green-100", emoji: "✅" },
 };
 
@@ -77,7 +78,7 @@ export default function Dashboard() {
       letterFilter === "all"
         ? true
         : letterFilter === "needsGeneration"
-          ? p.status === "complete" && !p.generatedLetterAt
+          ? (p.status === "complete" || p.status === "review") && !p.generatedLetterAt
           : letterFilter === "generated"
             ? !!p.generatedLetterAt && !p.letterSentAt
             : !!p.letterSentAt;
@@ -179,6 +180,7 @@ export default function Dashboard() {
     { value: "all", label: "All", emoji: "🏘️" },
     { value: "notStarted", label: "Not Started", emoji: "⏳" },
     { value: "inProgress", label: "In Progress", emoji: "🔍" },
+    { value: "review", label: "Review", emoji: "👀" },
     { value: "complete", label: "Complete", emoji: "✅" },
   ];
   const letterTabs: { value: LetterFilter; label: string; emoji: string }[] = [
@@ -475,7 +477,7 @@ export default function Dashboard() {
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 text-sky-700">
                           📄 Generated
                         </span>
-                      ) : p.status === "complete" ? (
+                      ) : p.status === "complete" || p.status === "review" ? (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
                           📝 Needs Generation
                         </span>

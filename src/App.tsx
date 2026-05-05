@@ -13,10 +13,12 @@ import PropertyList from "./pages/inspector/PropertyList";
 import PropertyCapture from "./pages/inspector/PropertyCapture";
 import SignInPage from "./pages/auth/SignInPage";
 import RoleSignInLanding from "./pages/RoleSignInLanding";
+import { MembershipDisplayNameSync } from "./components/MembershipDisplayNameSync";
 
 const App = () => {
   return (
     <BrowserRouter>
+      <MembershipDisplayNameSync />
       <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<RoleSignInLanding />} />

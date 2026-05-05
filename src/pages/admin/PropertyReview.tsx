@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -70,7 +70,7 @@ export default function PropertyReview() {
 
   const [emailInput, setEmailInput] = useState("");
   const [homeownerNamesInput, setHomeownerNamesInput] = useState("");
-  const [statusInput, setStatusInput] = useState<"notStarted" | "inProgress" | "complete">("notStarted");
+  const [statusInput, setStatusInput] = useState<"notStarted" | "inProgress" | "review" | "complete">("notStarted");
   const [adminFieldsDraft, setAdminFieldsDraft] = useState<AdminFieldsDraft>({
     previousInspectionSummary: "",
     priorOwnerLetterNotes2024: "",
@@ -82,7 +82,9 @@ export default function PropertyReview() {
   const [sending, setSending] = useState(false);
   const [toast, setToast] = useState("");
   const [editingInspectorNotes, setEditingInspectorNotes] = useState(false);
-  const [inspectorNotesDraft, setInspectorNotesDraft] = useState("");
+  const [inspectorNotesFrontDraft, setInspectorNotesFrontDraft] = useState("");
+  const [inspectorNotesSideDraft, setInspectorNotesSideDraft] = useState("");
+  const [inspectorNotesBackDraft, setInspectorNotesBackDraft] = useState("");
   const [aiBulletsDraft, setAiBulletsDraft] = useState("");
   const [aiBulletsSaveState, setAiBulletsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [aiBulletsLastSavedAt, setAiBulletsLastSavedAt] = useState<number | null>(null);
@@ -98,6 +100,23 @@ export default function PropertyReview() {
   const [arcReviewBusyId, setArcReviewBusyId] = useState<Id<"arcApplicationSubmissions"> | null>(null);
 
   const property = useQuery(api.properties.get, { id: pid });
+  const adminViewer = useQuery(api.tenancy.viewerContext, {});
+
+  const adminClerkIdsForNames = useMemo(() => {
+    if (!property) return [] as string[];
+    const ids = [
+      property.inspectionNotesEnteredByClerkUserId,
+      property.inspectionNotesLastUpdatedByClerkUserId,
+      property.inspectionDetailsVerifiedByClerkUserId,
+    ].filter((x): x is string => !!x);
+    return [...new Set(ids)];
+  }, [property]);
+
+  const adminDisplayNames = useQuery(
+    api.members.displayNamesByClerkIds,
+    adminClerkIdsForNames.length > 0 ? { clerkUserIds: adminClerkIdsForNames } : "skip",
+  );
+
   const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
   const fixPhotos = useQuery(api.fixPhotos.listByProperty, { propertyId: pid });
   const storedLetter = useQuery(api.properties.getLetterHtml, { id: pid });
@@ -107,6 +126,7 @@ export default function PropertyReview() {
   const updateStatus = useMutation(api.properties.updateStatus);
   const updateAdminPropertyFields = useMutation(api.properties.updateAdminPropertyFields);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
+  const setInspectionVerification = useMutation(api.properties.setInspectionVerification);
   const saveGeneratedLetterHtml = useMutation(api.properties.saveGeneratedLetterHtml);
   const setFixVerification = useMutation(api.fixPhotos.setVerification);
   const generateLetter = useAction(api.letters.generate);
@@ -149,8 +169,36 @@ export default function PropertyReview() {
   ]);
 
   useEffect(() => {
-    setInspectorNotesDraft(property?.inspectorNotes ?? "");
-  }, [property?._id, property?.inspectorNotes]);
+    if (!property) return;
+    const hasSectionFields =
+      property.inspectorNotesFront !== undefined ||
+      property.inspectorNotesSide !== undefined ||
+      property.inspectorNotesBack !== undefined;
+    const anySectionText =
+      (property.inspectorNotesFront?.trim() ?? "") +
+        (property.inspectorNotesSide?.trim() ?? "") +
+        (property.inspectorNotesBack?.trim() ?? "") >
+      0;
+    if (hasSectionFields || anySectionText) {
+      setInspectorNotesFrontDraft(property.inspectorNotesFront ?? "");
+      setInspectorNotesSideDraft(property.inspectorNotesSide ?? "");
+      setInspectorNotesBackDraft(property.inspectorNotesBack ?? "");
+    } else if (property.inspectorNotes?.trim()) {
+      setInspectorNotesFrontDraft(property.inspectorNotes);
+      setInspectorNotesSideDraft("");
+      setInspectorNotesBackDraft("");
+    } else {
+      setInspectorNotesFrontDraft("");
+      setInspectorNotesSideDraft("");
+      setInspectorNotesBackDraft("");
+    }
+  }, [
+    property?._id,
+    property?.inspectorNotes,
+    property?.inspectorNotesFront,
+    property?.inspectorNotesSide,
+    property?.inspectorNotesBack,
+  ]);
 
   useEffect(() => {
     aiBulletsHydratedForPropertyIdRef.current = null;
@@ -280,6 +328,20 @@ export default function PropertyReview() {
     );
   }
 
+  const nameFor = (id?: string) => (!id ? "" : adminDisplayNames?.[id]?.trim() || "Team member");
+  const hasAnyInspectorNote =
+    !!(
+      inspectorNotesFrontDraft.trim() ||
+      inspectorNotesSideDraft.trim() ||
+      inspectorNotesBackDraft.trim() ||
+      property.inspectorNotes?.trim()
+    );
+  const lastSaverId = property.inspectionNotesLastUpdatedByClerkUserId;
+  const adminViewerId = adminViewer?.clerkUserId;
+  const cannotVerifyOwn = !!lastSaverId && !!adminViewerId && adminViewerId === lastSaverId;
+  const isVerified = !!property.inspectionDetailsVerifiedByClerkUserId;
+  const verifyCheckboxDisabled = !isVerified && (!hasAnyInspectorNote || cannotVerifyOwn);
+
   return (
     <div className="min-h-screen bg-[#f8f7ff]">
       <div className="sticky top-0 z-10 gradient-admin px-4 pt-4 pb-3 shadow-md">
@@ -367,7 +429,9 @@ export default function PropertyReview() {
                   <p className="text-xs text-muted-foreground mb-1">Property Status</p>
                   <Select
                     value={statusInput}
-                    onValueChange={(v) => setStatusInput(v as "notStarted" | "inProgress" | "complete")}
+                    onValueChange={(v) =>
+                      setStatusInput(v as "notStarted" | "inProgress" | "review" | "complete")
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -375,6 +439,7 @@ export default function PropertyReview() {
                     <SelectContent>
                       <SelectItem value="notStarted">Not started</SelectItem>
                       <SelectItem value="inProgress">In progress</SelectItem>
+                      <SelectItem value="review">Review</SelectItem>
                       <SelectItem value="complete">Complete</SelectItem>
                     </SelectContent>
                   </Select>
@@ -638,9 +703,9 @@ export default function PropertyReview() {
 
             <div className="rounded-xl border bg-white p-4 space-y-3">
               <h2 className="text-lg font-semibold">Inspection Content</h2>
-              <div className="rounded border p-3 space-y-2">
+              <div className="rounded border p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">Inspector Notes</p>
+                  <p className="text-sm font-medium">Inspector Notes (Front / Side / Back)</p>
                   {!editingInspectorNotes ? (
                     <Button size="sm" variant="outline" onClick={() => setEditingInspectorNotes(true)}>
                       Edit
@@ -650,7 +715,12 @@ export default function PropertyReview() {
                       <Button
                         size="sm"
                         onClick={async () => {
-                          await updateInspectorNotes({ id: pid, inspectorNotes: inspectorNotesDraft });
+                          await updateInspectorNotes({
+                            id: pid,
+                            inspectorNotesFront: inspectorNotesFrontDraft,
+                            inspectorNotesSide: inspectorNotesSideDraft,
+                            inspectorNotesBack: inspectorNotesBackDraft,
+                          });
                           setEditingInspectorNotes(false);
                           showToast("Inspector notes updated");
                         }}
@@ -661,7 +731,28 @@ export default function PropertyReview() {
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          setInspectorNotesDraft(property.inspectorNotes ?? "");
+                          const hasSectionFields =
+                            property.inspectorNotesFront !== undefined ||
+                            property.inspectorNotesSide !== undefined ||
+                            property.inspectorNotesBack !== undefined;
+                          const anySectionText =
+                            (property.inspectorNotesFront?.trim() ?? "") +
+                              (property.inspectorNotesSide?.trim() ?? "") +
+                              (property.inspectorNotesBack?.trim() ?? "") >
+                            0;
+                          if (hasSectionFields || anySectionText) {
+                            setInspectorNotesFrontDraft(property.inspectorNotesFront ?? "");
+                            setInspectorNotesSideDraft(property.inspectorNotesSide ?? "");
+                            setInspectorNotesBackDraft(property.inspectorNotesBack ?? "");
+                          } else if (property.inspectorNotes?.trim()) {
+                            setInspectorNotesFrontDraft(property.inspectorNotes);
+                            setInspectorNotesSideDraft("");
+                            setInspectorNotesBackDraft("");
+                          } else {
+                            setInspectorNotesFrontDraft("");
+                            setInspectorNotesSideDraft("");
+                            setInspectorNotesBackDraft("");
+                          }
                           setEditingInspectorNotes(false);
                         }}
                       >
@@ -671,16 +762,129 @@ export default function PropertyReview() {
                   )}
                 </div>
                 {editingInspectorNotes ? (
-                  <Textarea
-                    value={inspectorNotesDraft}
-                    onChange={(e) => setInspectorNotesDraft(e.target.value)}
-                    rows={4}
-                  />
+                  <div className="space-y-3">
+                    {(["Front", "Side", "Back"] as const).map((label) => {
+                      const key =
+                        label === "Front"
+                          ? "front"
+                          : label === "Side"
+                            ? "side"
+                            : "back";
+                      const val =
+                        key === "front"
+                          ? inspectorNotesFrontDraft
+                          : key === "side"
+                            ? inspectorNotesSideDraft
+                            : inspectorNotesBackDraft;
+                      const setVal =
+                        key === "front"
+                          ? setInspectorNotesFrontDraft
+                          : key === "side"
+                            ? setInspectorNotesSideDraft
+                            : setInspectorNotesBackDraft;
+                      return (
+                        <div key={key}>
+                          <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                          <Textarea value={val} onChange={(e) => setVal(e.target.value)} rows={4} />
+                        </div>
+                      );
+                    })}
+                  </div>
                 ) : (
-                  <p className="text-sm whitespace-pre-wrap">
-                    {property.inspectorNotes?.trim() || "No inspector notes yet."}
-                  </p>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground">Front</p>
+                      <p className="whitespace-pre-wrap">{property.inspectorNotesFront?.trim() || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground">Side</p>
+                      <p className="whitespace-pre-wrap">{property.inspectorNotesSide?.trim() || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-muted-foreground">Back</p>
+                      <p className="whitespace-pre-wrap">{property.inspectorNotesBack?.trim() || "—"}</p>
+                    </div>
+                    {!property.inspectorNotesFront?.trim() &&
+                      !property.inspectorNotesSide?.trim() &&
+                      !property.inspectorNotesBack?.trim() &&
+                      property.inspectorNotes?.trim() && (
+                        <p className="text-muted-foreground whitespace-pre-wrap border-t pt-2">
+                          {property.inspectorNotes}
+                        </p>
+                      )}
+                    {!hasAnyInspectorNote && (
+                      <p className="text-muted-foreground">No inspector notes yet.</p>
+                    )}
+                  </div>
                 )}
+                {(property.inspectionNotesEnteredByClerkUserId ||
+                  property.inspectionNotesLastUpdatedByClerkUserId) && (
+                  <div className="text-xs text-muted-foreground space-y-0.5 border-t pt-2">
+                    {property.inspectionNotesEnteredByClerkUserId ? (
+                      <p>
+                        Added by <span className="font-medium text-foreground">{nameFor(property.inspectionNotesEnteredByClerkUserId)}</span>
+                        {property.inspectionNotesEnteredAt != null &&
+                          ` · ${new Date(property.inspectionNotesEnteredAt).toLocaleString()}`}
+                      </p>
+                    ) : null}
+                    {property.inspectionNotesLastUpdatedByClerkUserId ? (
+                      <p>
+                        Last updated by{" "}
+                        <span className="font-medium text-foreground">
+                          {nameFor(property.inspectionNotesLastUpdatedByClerkUserId)}
+                        </span>
+                        {property.inspectionNotesLastUpdatedAt != null &&
+                          ` · ${new Date(property.inspectionNotesLastUpdatedAt).toLocaleString()}`}
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+                <label
+                  className={`flex items-start gap-3 rounded-md border p-3 transition-colors ${
+                    verifyCheckboxDisabled
+                      ? "cursor-not-allowed border-muted bg-muted/20 opacity-[0.72]"
+                      : "cursor-pointer bg-muted/30 border-border"
+                  }`}
+                  aria-disabled={verifyCheckboxDisabled || undefined}
+                >
+                  <input
+                    type="checkbox"
+                    className={`mt-1 h-4 w-4 shrink-0 rounded border-gray-300 ${verifyCheckboxDisabled ? "cursor-not-allowed opacity-60" : ""}`}
+                    checked={isVerified}
+                    disabled={verifyCheckboxDisabled}
+                    onChange={async (e) => {
+                      try {
+                        if (e.target.checked) {
+                          await updateInspectorNotes({
+                            id: pid,
+                            inspectorNotesFront: inspectorNotesFrontDraft,
+                            inspectorNotesSide: inspectorNotesSideDraft,
+                            inspectorNotesBack: inspectorNotesBackDraft,
+                          });
+                        }
+                        await setInspectionVerification({ propertyId: pid, verified: e.target.checked });
+                        showToast(e.target.checked ? "Marked as verified" : "Verification cleared");
+                      } catch (err) {
+                        showToast(err instanceof Error ? err.message : "Could not update verification");
+                      }
+                    }}
+                  />
+                  <span
+                    className={`text-sm ${verifyCheckboxDisabled ? "pointer-events-none text-muted-foreground" : ""}`}
+                  >
+                    <span className="font-medium">Verify inspection details</span>
+                    <span className={`block text-xs mt-0.5 ${verifyCheckboxDisabled ? "text-muted-foreground/70" : "text-muted-foreground"}`}>
+                      Another team member must confirm. You cannot verify if you last edited these notes.
+                    </span>
+                    {isVerified && property.inspectionDetailsVerifiedByClerkUserId ? (
+                      <span className="block text-xs text-muted-foreground mt-1">
+                        Verified by {nameFor(property.inspectionDetailsVerifiedByClerkUserId)}
+                        {property.inspectionDetailsVerifiedAt != null &&
+                          ` · ${new Date(property.inspectionDetailsVerifiedAt).toLocaleString()}`}
+                      </span>
+                    ) : null}
+                  </span>
+                </label>
               </div>
 
               <div className="rounded border p-3 space-y-2">
@@ -690,7 +894,7 @@ export default function PropertyReview() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={aiBulletsBusy || !property.inspectorNotes?.trim()}
+                    disabled={aiBulletsBusy || !hasAnyInspectorNote}
                     onClick={async () => {
                       setAiBulletsBusy(true);
                       try {

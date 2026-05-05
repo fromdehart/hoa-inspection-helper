@@ -46,6 +46,7 @@ export default defineSchema({
     status: v.union(
       v.literal("notStarted"),
       v.literal("inProgress"),
+      v.literal("review"),
       v.literal("complete"),
     ),
     accessToken: v.string(),
@@ -60,6 +61,15 @@ export default defineSchema({
     previousInspectorComments: v.optional(v.string()),
     previousInspectionSummary: v.optional(v.string()),
     inspectorNotes: v.optional(v.string()),
+    inspectorNotesFront: v.optional(v.string()),
+    inspectorNotesSide: v.optional(v.string()),
+    inspectorNotesBack: v.optional(v.string()),
+    inspectionNotesEnteredAt: v.optional(v.number()),
+    inspectionNotesEnteredByClerkUserId: v.optional(v.string()),
+    inspectionNotesLastUpdatedByClerkUserId: v.optional(v.string()),
+    inspectionNotesLastUpdatedAt: v.optional(v.number()),
+    inspectionDetailsVerifiedAt: v.optional(v.number()),
+    inspectionDetailsVerifiedByClerkUserId: v.optional(v.string()),
     /** Archival text from 2024 owner letters (Word import); not exposed on homeowner portal. */
     priorOwnerLetterNotes2024: v.optional(v.string()),
     /** AI-generated HOA-style bullet list for letters; not exposed on homeowner portal. */

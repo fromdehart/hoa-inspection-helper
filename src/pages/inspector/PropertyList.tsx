@@ -6,6 +6,7 @@ import { Id } from "../../../convex/_generated/dataModel";
 const STATUS_DOT: Record<string, string> = {
   notStarted: "bg-gray-400",
   inProgress: "bg-amber-400",
+  review: "bg-violet-500",
   complete: "bg-green-500",
 };
 

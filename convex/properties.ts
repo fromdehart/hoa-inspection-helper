@@ -5,15 +5,18 @@ import {
   DEFAULT_LETTER_TEMPLATE,
 } from "./letterBody";
 import { requireViewerRole } from "./lib/tenantAuth";
+import {
+  buildCombinedInspectorNotes,
+  buildInspectorNotesPatch,
+  propertyHasInspectorNotesContent,
+  resolveSectionInputs,
+} from "./lib/inspectorNotes";
+import { propertyStatusValidator } from "./lib/propertyStatus";
 
 export const list = query({
   args: {
     streetId: v.optional(v.id("streets")),
-    status: v.optional(v.union(
-      v.literal("notStarted"),
-      v.literal("inProgress"),
-      v.literal("complete"),
-    )),
+    status: v.optional(propertyStatusValidator),
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
@@ -61,6 +64,12 @@ export const getByToken = query({
       priorOwnerLetterNotes2024: _prior2024,
       aiLetterBullets: _aiBullets,
       aiLetterBulletsAt: _aiBulletsAt,
+      inspectionNotesEnteredAt: _inEnteredAt,
+      inspectionNotesEnteredByClerkUserId: _inEnteredBy,
+      inspectionNotesLastUpdatedByClerkUserId: _inLastBy,
+      inspectionNotesLastUpdatedAt: _inLastAt,
+      inspectionDetailsVerifiedAt: _inVerAt,
+      inspectionDetailsVerifiedByClerkUserId: _inVerBy,
       ...safe
     } = doc;
     return safe;
@@ -134,11 +143,7 @@ export const importFromCSV = mutation({
 export const updateStatus = mutation({
   args: {
     id: v.id("properties"),
-    status: v.union(
-      v.literal("notStarted"),
-      v.literal("inProgress"),
-      v.literal("complete"),
-    ),
+    status: propertyStatusValidator,
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
@@ -350,12 +355,19 @@ export const patchAiLetterBullets = internalMutation({
 });
 
 export const updateInspectorNotes = mutation({
-  args: { id: v.id("properties"), inspectorNotes: v.string() },
+  args: {
+    id: v.id("properties"),
+    inspectorNotesFront: v.string(),
+    inspectorNotesSide: v.string(),
+    inspectorNotesBack: v.string(),
+  },
   handler: async (ctx, args) => {
     const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
     const property = await ctx.db.get(args.id);
     if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
-    await ctx.db.patch(args.id, { inspectorNotes: args.inspectorNotes });
+    const resolved = resolveSectionInputs(property, args.inspectorNotesFront, args.inspectorNotesSide, args.inspectorNotesBack);
+    const patch = buildInspectorNotesPatch(property, viewer.clerkUserId, resolved);
+    await ctx.db.patch(args.id, patch);
     return null;
   },
 });
@@ -374,21 +386,66 @@ export const updateAiLetterBullets = mutation({
   },
 });
 
-/** Inspector completion without auto-generating a letter. */
+/** Sets workflow status: complete if inspection details are verified, else review (pending peer verification). */
 export const completeHouseCapture = mutation({
   args: {
     id: v.id("properties"),
-    inspectorNotes: v.string(),
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
     const property = await ctx.db.get(args.id);
     if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
+    const verified = !!property.inspectionDetailsVerifiedByClerkUserId;
     await ctx.db.patch(args.id, {
-      inspectorNotes: args.inspectorNotes,
-      status: "complete",
+      status: verified ? "complete" : "review",
     });
     return { ok: true as const };
+  },
+});
+
+/** Peer verification: another user (not the last note editor) confirms inspection details. */
+export const setInspectionVerification = mutation({
+  args: {
+    propertyId: v.id("properties"),
+    verified: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.propertyId);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
+
+    if (args.verified) {
+      if (!propertyHasInspectorNotesContent(property)) {
+        throw new Error("No inspection notes to verify yet.");
+      }
+      const lastSaver = property.inspectionNotesLastUpdatedByClerkUserId;
+      const enteredBy = property.inspectionNotesEnteredByClerkUserId;
+      /** Prefer last saver; fallback for legacy rows that have notes but never ran section-note saves. */
+      const cannotVerifyIfSameAs = lastSaver ?? enteredBy ?? null;
+      if (cannotVerifyIfSameAs && viewer.clerkUserId === cannotVerifyIfSameAs) {
+        throw new Error("You cannot verify notes you last edited. Ask another inspector or admin.");
+      }
+      const now = Date.now();
+      const patch: Record<string, unknown> = {
+        inspectionDetailsVerifiedByClerkUserId: viewer.clerkUserId,
+        inspectionDetailsVerifiedAt: now,
+      };
+      if (property.status === "review") {
+        patch.status = "complete";
+      }
+      await ctx.db.patch(args.propertyId, patch);
+      return null;
+    }
+
+    const patch: Record<string, unknown> = {
+      inspectionDetailsVerifiedByClerkUserId: undefined,
+      inspectionDetailsVerifiedAt: undefined,
+    };
+    if (property.status === "complete") {
+      patch.status = "review";
+    }
+    await ctx.db.patch(args.propertyId, patch);
+    return null;
   },
 });
 
@@ -410,16 +467,23 @@ export const saveGeneratedLetterHtml = mutation({
   },
 });
 
-/** Save notes, mark complete, persist generated letter HTML (sync merge, no image AI). */
+/** Save notes from DB, persist generated letter HTML (sync merge, no image AI). Status: complete if verified, else review. */
 export const completeHouseAndSaveLetter = mutation({
   args: {
     id: v.id("properties"),
-    inspectorNotes: v.string(),
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
     const property = await ctx.db.get(args.id);
     if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
+
+    const inspectorFindingsPlain =
+      property.inspectorNotes?.trim() ??
+      buildCombinedInspectorNotes(
+        property.inspectorNotesFront ?? "",
+        property.inspectorNotesSide ?? "",
+        property.inspectorNotesBack ?? "",
+      );
 
     const templateDoc = await ctx.db
       .query("templates")
@@ -433,7 +497,7 @@ export const completeHouseAndSaveLetter = mutation({
       recipientName: property.homeownerNames?.trim() || "Homeowner",
       recipientStreet: property.address,
       recipientCityStateZip: "Fairfax, VA 22030",
-      inspectorNotes: args.inspectorNotes,
+      inspectorNotes: inspectorFindingsPlain,
       previousFrontObs: property.previousFrontObs,
       previousBackObs: property.previousBackObs,
       previousInspectorComments: property.previousInspectorComments,
@@ -447,13 +511,13 @@ export const completeHouseAndSaveLetter = mutation({
       templateContent,
       property: merged,
       publicBaseUrl: publicBase,
-      inspectorFindingsPlain: args.inspectorNotes,
+      inspectorFindingsPlain,
       maintenanceItemsPlain,
     });
 
+    const verified = !!property.inspectionDetailsVerifiedByClerkUserId;
     await ctx.db.patch(args.id, {
-      inspectorNotes: args.inspectorNotes,
-      status: "complete",
+      status: verified ? "complete" : "review",
       generatedLetterHtml: html,
       generatedLetterAt: Date.now(),
     });
