@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { useClerk } from "@clerk/clerk-react";
-import { Menu } from "lucide-react";
+import { Menu, Search, X } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import JSZip from "jszip";
@@ -84,6 +84,21 @@ export default function Dashboard() {
             : !!p.letterSentAt;
     return searchMatch && letterMatch;
   });
+
+  const propertyCount = properties?.length ?? 0;
+  const filtersActive =
+    search.trim() !== "" || statusFilter !== "all" || letterFilter !== "all";
+
+  function clearFilters() {
+    setSearch("");
+    setStatusFilter("all");
+    setLetterFilter("all");
+  }
+
+  const tableEmptyBecauseFilters =
+    properties !== undefined &&
+    propertyCount > 0 &&
+    filtered.length === 0;
 
   const handleCSVChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -202,11 +217,26 @@ export default function Dashboard() {
             <h1 className="text-white font-extrabold text-2xl">Admin dashboard 📋</h1>
           </div>
           <div className="relative z-[1] flex shrink-0 items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              className="hidden"
+              aria-hidden
+              onChange={handleCSVChange}
+            />
+            <button
+              type="button"
+              className="hidden md:inline-flex text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
+              onClick={() => navigate("/admin/letter-export")}
+            >
+              📄 Export Letters
+            </button>
             <Sheet open={adminMenuOpen} onOpenChange={setAdminMenuOpen}>
               <SheetTrigger asChild>
                 <button
                   type="button"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/35 bg-white/15 text-white hover:bg-white/25 transition-colors md:hidden"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/35 bg-white/15 text-white hover:bg-white/25 transition-colors"
                   aria-label="Open menu"
                 >
                   <Menu className="h-5 w-5" strokeWidth={2.25} />
@@ -220,6 +250,40 @@ export default function Dashboard() {
                   <SheetTitle className="text-left text-gray-900">Menu</SheetTitle>
                 </SheetHeader>
                 <nav className="mt-6 flex flex-col gap-2" aria-label="Dashboard actions">
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors md:hidden"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      navigate("/admin/letter-export");
+                    }}
+                  >
+                    📄 Export Letters
+                  </button>
+                  <button
+                    type="button"
+                    disabled={csvUploading}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      window.setTimeout(() => fileInputRef.current?.click(), 0);
+                    }}
+                  >
+                    {csvUploading ? "⏳ Importing…" : "📥 Import Addresses"}
+                  </button>
+                  {canInspect && (
+                    <button
+                      type="button"
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
+                      onClick={() => {
+                        setAdminMenuOpen(false);
+                        navigate("/inspector/streets");
+                      }}
+                    >
+                      🚶 Inspector Mode
+                    </button>
+                  )}
+                  <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-gray-500">More</p>
                   <button
                     type="button"
                     className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
@@ -242,16 +306,6 @@ export default function Dashboard() {
                   </button>
                   <button
                     type="button"
-                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
-                    onClick={() => {
-                      setAdminMenuOpen(false);
-                      navigate("/admin/letter-export");
-                    }}
-                  >
-                    📄 Export PDFs
-                  </button>
-                  <button
-                    type="button"
                     disabled={photoExporting || !photoExportRows}
                     className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50"
                     onClick={() => {
@@ -261,18 +315,6 @@ export default function Dashboard() {
                   >
                     {photoExporting ? "📸 Exporting Photos…" : "📸 Export Photos ZIP"}
                   </button>
-                  {canInspect && (
-                    <button
-                      type="button"
-                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
-                      onClick={() => {
-                        setAdminMenuOpen(false);
-                        navigate("/inspector/streets");
-                      }}
-                    >
-                      🚶 Inspector Mode
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-left text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
@@ -286,53 +328,6 @@ export default function Dashboard() {
                 </nav>
               </SheetContent>
             </Sheet>
-            <div className="hidden md:flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-                onClick={() => navigate("/admin/settings")}
-              >
-                ⚙️ Settings
-              </button>
-              <button
-                type="button"
-                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-                onClick={() => navigate("/admin/letter-export")}
-              >
-                📄 Export PDFs
-              </button>
-              <button
-                type="button"
-                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-                onClick={() => navigate("/admin/members")}
-              >
-                👥 Team Members
-              </button>
-              <button
-                type="button"
-                disabled={photoExporting || !photoExportRows}
-                className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors disabled:opacity-50"
-                onClick={() => void handlePhotoExport()}
-              >
-                {photoExporting ? "📸 Exporting Photos…" : "📸 Export Photos ZIP"}
-              </button>
-              {canInspect && (
-                <button
-                  type="button"
-                  className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-                  onClick={() => navigate("/inspector/streets")}
-                >
-                  🚶 Inspector Mode
-                </button>
-              )}
-              <button
-                type="button"
-                className="text-sm bg-white/10 hover:bg-white/20 text-white/70 px-3 py-1.5 rounded-full border border-white/20 transition-colors"
-                onClick={() => void signOut({ redirectUrl: "/" })}
-              >
-                Logout
-              </button>
-            </div>
           </div>
         </div>
         {totalAll > 0 && (
@@ -365,57 +360,122 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2 items-center mb-4">
-          <div className="flex gap-1.5 flex-wrap">
-            {tabs.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                className={`btn-bounce px-3 py-1.5 text-sm rounded-full font-semibold transition-all ${
-                  statusFilter === t.value
-                    ? "bg-violet-600 text-white shadow-md"
-                    : "bg-white text-gray-600 border border-gray-200 hover:border-violet-300"
-                }`}
-                onClick={() => setStatusFilter(t.value)}
+        <section
+          className="mb-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm"
+          aria-label="Filter properties"
+        >
+          <div className="flex flex-col gap-4">
+            <div>
+              <label htmlFor="admin-property-search" className="sr-only">
+                Search by address
+              </label>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                  strokeWidth={2.25}
+                  aria-hidden
+                />
+                <input
+                  id="admin-property-search"
+                  type="search"
+                  placeholder="Search by address…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50/80 py-2.5 pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 focus:border-violet-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-200"
+                  autoComplete="off"
+                />
+                {search.trim() !== "" && (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-200/80 hover:text-gray-800"
+                    onClick={() => setSearch("")}
+                    aria-label="Clear search"
+                  >
+                    <X className="h-4 w-4" strokeWidth={2.25} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Inspection status
+              </p>
+              <div
+                className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                role="group"
+                aria-label="Inspection status"
               >
-                {t.emoji} {t.label}
-              </button>
-            ))}
+                {tabs.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`shrink-0 rounded-full px-3 py-2 text-sm font-semibold transition-all ${
+                      statusFilter === t.value
+                        ? "bg-violet-600 text-white shadow-md ring-2 ring-violet-300 ring-offset-1"
+                        : "border border-gray-200 bg-white text-gray-700 hover:border-violet-300 hover:bg-violet-50/60"
+                    }`}
+                    onClick={() => setStatusFilter(t.value)}
+                  >
+                    <span className="mr-1">{t.emoji}</span>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-3">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Letter workflow
+              </p>
+              <div
+                className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                role="group"
+                aria-label="Letter workflow"
+              >
+                {letterTabs.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`shrink-0 rounded-full px-3 py-2 text-sm font-semibold transition-all ${
+                      letterFilter === t.value
+                        ? "bg-sky-600 text-white shadow-md ring-2 ring-sky-300 ring-offset-1"
+                        : "border border-gray-200 bg-white text-gray-700 hover:border-sky-300 hover:bg-sky-50/60"
+                    }`}
+                    onClick={() => setLetterFilter(t.value)}
+                  >
+                    <span className="mr-1">{t.emoji}</span>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
+              <p className="text-sm text-gray-600">
+                <span className="font-semibold text-gray-900">{filtered.length}</span>
+                {propertyCount > 0 && filtered.length !== propertyCount ? (
+                  <>
+                    {" "}
+                    <span className="text-gray-500">of {propertyCount}</span>
+                  </>
+                ) : null}{" "}
+                <span className="text-gray-500">
+                  {filtered.length === 1 ? "property" : "properties"}
+                </span>
+              </p>
+              {filtersActive && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-sm font-semibold text-violet-700 hover:text-violet-900 hover:underline"
+                >
+                  Clear all filters
+                </button>
+              )}
+            </div>
           </div>
-          <div className="flex-1 min-w-40">
-            <input
-              placeholder="🔍 Search address..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full px-3 py-1.5 text-sm rounded-full border border-gray-200 bg-white focus:outline-none focus:border-violet-400 transition-colors"
-            />
-          </div>
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCSVChange} />
-          <button
-            type="button"
-            className="btn-bounce px-4 py-1.5 text-sm rounded-full bg-violet-600 text-white font-semibold shadow-sm hover:bg-violet-700 transition-colors disabled:opacity-50"
-            disabled={csvUploading}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {csvUploading ? "Importing..." : "📥 Import CSV"}
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center mb-4">
-          {letterTabs.map((t) => (
-            <button
-              key={t.value}
-              type="button"
-              className={`btn-bounce px-3 py-1.5 text-sm rounded-full font-semibold transition-all ${
-                letterFilter === t.value
-                  ? "bg-sky-600 text-white shadow-md"
-                  : "bg-white text-gray-600 border border-gray-200 hover:border-sky-300"
-              }`}
-              onClick={() => setLetterFilter(t.value)}
-            >
-              {t.emoji} {t.label}
-            </button>
-          ))}
-        </div>
+        </section>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-sm">
@@ -443,9 +503,23 @@ export default function Dashboard() {
                 <tr>
                   <td colSpan={5} className="px-4 py-12 text-center">
                     <div className="text-4xl mb-2">{properties === undefined ? "⏳" : "🏚️"}</div>
-                    <p className="text-gray-400 font-medium">
-                      {properties === undefined ? "Loading..." : "No properties found"}
-                    </p>
+                    {properties === undefined ? (
+                      <p className="text-gray-400 font-medium">Loading...</p>
+                    ) : tableEmptyBecauseFilters ? (
+                      <>
+                        <p className="text-gray-700 font-semibold">No properties match these filters</p>
+                        <p className="mt-1 text-sm text-gray-500">Try adjusting search or clearing filters.</p>
+                        <button
+                          type="button"
+                          className="btn-bounce mt-4 inline-flex rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-700"
+                          onClick={clearFilters}
+                        >
+                          Clear all filters
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-gray-400 font-medium">No properties in this view yet</p>
+                    )}
                   </td>
                 </tr>
               )}

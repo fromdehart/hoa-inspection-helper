@@ -544,12 +544,31 @@ export const listGeneratedLetterBodies = query({
       .query("properties")
       .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
       .collect();
-    return all
-      .filter((p) => p.generatedLetterHtml && p.generatedLetterHtml.length > 0)
-      .map((p) => ({
-        _id: p._id,
-        address: p.address,
-        html: p.generatedLetterHtml as string,
-      }));
+    const rows = await Promise.all(
+      all
+        .filter((p) => p.generatedLetterHtml && p.generatedLetterHtml.length > 0)
+        .map(async (p) => {
+        const photos = await ctx.db
+          .query("photos")
+          .withIndex("by_hoa_property", (q) => q.eq("hoaId", viewer.hoaId).eq("propertyId", p._id))
+          .collect();
+        const sortedPhotos = photos
+          .sort((a, b) => a.uploadedAt - b.uploadedAt)
+          .map((photo) => ({
+            _id: photo._id,
+            section: photo.section,
+            uploadedAt: photo.uploadedAt,
+            url: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
+          }))
+          .filter((photo) => photo.url.length > 0);
+        return {
+          _id: p._id,
+          address: p.address,
+          html: p.generatedLetterHtml as string,
+          photos: sortedPhotos,
+        };
+      }),
+    );
+    return rows;
   },
 });

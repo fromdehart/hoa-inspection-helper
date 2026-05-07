@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-const OWNER_WORKFLOW_ENABLED = false;
 
 type AdminFieldsDraft = {
   previousInspectionSummary: string;
@@ -79,7 +78,6 @@ export default function PropertyReview() {
   const [showPreview, setShowPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
-  const [sending, setSending] = useState(false);
   const [toast, setToast] = useState("");
   const [editingInspectorNotes, setEditingInspectorNotes] = useState(false);
   const [inspectorNotesFrontDraft, setInspectorNotesFrontDraft] = useState("");
@@ -130,7 +128,6 @@ export default function PropertyReview() {
   const saveGeneratedLetterHtml = useMutation(api.properties.saveGeneratedLetterHtml);
   const setFixVerification = useMutation(api.fixPhotos.setVerification);
   const generateLetter = useAction(api.letters.generate);
-  const sendLetter = useAction(api.letters.send);
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
   const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
   const arcRefDocs = useQuery(api.arcReferenceDocs.list, {});
@@ -288,21 +285,6 @@ export default function PropertyReview() {
     }
     setLetterHtml(html);
     setShowPreview(true);
-  };
-
-  const handleSend = async () => {
-    setSending(true);
-    try {
-      const result = await sendLetter({ propertyId: pid });
-      if (result.success) {
-        showToast("Letter sent successfully!");
-        setShowPreview(false);
-      } else {
-        showToast("Send failed: " + result.error);
-      }
-    } finally {
-      setSending(false);
-    }
   };
 
   const handleSavePropertyDetails = async () => {
@@ -1038,33 +1020,11 @@ export default function PropertyReview() {
               dangerouslySetInnerHTML={{ __html: letterHtml }}
             />
           )}
-          <div className="flex gap-2 pt-2">
-            <Button
-              onClick={handleSend}
-              disabled={!OWNER_WORKFLOW_ENABLED || sending || !property.email || !storedLetter?.html}
-              title={
-                !OWNER_WORKFLOW_ENABLED
-                  ? "Homeowner workflow is paused"
-                  : !property.email
-                    ? "Set homeowner email first"
-                    : !storedLetter?.html
-                      ? "Generate the letter first"
-                      : ""
-              }
-            >
-              {sending ? "Sending..." : "Send to Homeowner"}
-            </Button>
+          <div className="flex justify-end pt-2">
             <Button variant="outline" onClick={() => setShowPreview(false)}>
               Close
             </Button>
           </div>
-          {!property.email && <p className="text-xs text-red-500">Set a homeowner email before sending.</p>}
-          {!storedLetter?.html && <p className="text-xs text-red-500">Generate the letter before sending.</p>}
-          {!OWNER_WORKFLOW_ENABLED && (
-            <p className="text-xs text-amber-600">
-              Homeowner portal and sending are temporarily paused for this phase.
-            </p>
-          )}
         </DialogContent>
       </Dialog>
     </div>
