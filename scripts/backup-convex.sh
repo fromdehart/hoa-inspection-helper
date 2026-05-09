@@ -4,7 +4,7 @@
 #
 # Env:
 #   CONVEX_BACKUP_PROJECT_DIR  — repo root (default: parent of scripts/)
-#   CONVEX_BACKUP_DIR          — output directory for snapshot-*.zip (default: $HOME/backups/convex)
+#   CONVEX_BACKUP_DIR          — output directory for snapshot-*.zip (default: <project>/backups/convex, same level as uploads/)
 #   CONVEX_BACKUP_RETENTION_DAYS — delete snapshot-*.zip older than this (default: 14)
 #   CONVEX_BACKUP_DEPLOYMENT_NAME — e.g. glorious-turtle-400 (default: glorious-turtle-400)
 #   CONVEX_BACKUP_USE_PROD       — if set to 1, export --prod instead of --deployment-name
@@ -12,12 +12,12 @@
 #   CONVEX_DEPLOY_KEY            — set in cron Environment or systemd EnvironmentFile for unattended auth
 #
 # Example crontab (03:15 daily, server local time):
-#   15 3 * * * CONVEX_BACKUP_PROJECT_DIR=/var/www/hoa-inspection-helper /var/www/hoa-inspection-helper/scripts/backup-convex.sh
+#   15 3 * * * /var/www/hoa-inspection-helper/scripts/backup-convex.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${CONVEX_BACKUP_PROJECT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-BACKUP_DIR="${CONVEX_BACKUP_DIR:-$HOME/backups/convex}"
+BACKUP_DIR="${CONVEX_BACKUP_DIR:-$PROJECT_DIR/backups/convex}"
 RETENTION_DAYS="${CONVEX_BACKUP_RETENTION_DAYS:-14}"
 DEPLOYMENT_NAME="${CONVEX_BACKUP_DEPLOYMENT_NAME:-glorious-turtle-400}"
 LOG_DIR="${CONVEX_BACKUP_LOG_DIR:-$BACKUP_DIR/logs}"

@@ -29,6 +29,9 @@ dist-ssr
 # Local inspector uploads (served in dev; do not commit)
 uploads/
 
+# Convex export zips from scripts/backup-convex.sh (VPS or local; do not commit)
+backups/
+
 # Personal configuration (gitignored for security)
 .config/
 
