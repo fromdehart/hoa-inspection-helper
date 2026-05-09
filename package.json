@@ -19,7 +19,8 @@
     "import:real-notes": "tsx scripts/import-real-notes-docx.ts",
     "build:fewshot-bullets": "tsx scripts/build-letter-bullet-fewshot.ts",
     "seed:ridge-top-terrace": "tsx scripts/seed-ridge-top-terrace.ts",
-    "seed:demo": "tsx scripts/seed-demo-hoa.ts"
+    "seed:demo": "tsx scripts/seed-demo-hoa.ts",
+    "backup:convex": "bash scripts/backup-convex.sh"
   },
   "dependencies": {
     "@clerk/backend": "^2.33.3",
