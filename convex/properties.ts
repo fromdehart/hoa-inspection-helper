@@ -386,7 +386,7 @@ export const updateAiLetterBullets = mutation({
   },
 });
 
-/** Sets workflow status: complete if inspection details are verified, else review (pending peer verification). */
+/** Sets workflow status: complete if inspection details are verified, else review. */
 export const completeHouseCapture = mutation({
   args: {
     id: v.id("properties"),
@@ -403,7 +403,7 @@ export const completeHouseCapture = mutation({
   },
 });
 
-/** Peer verification: another user (not the last note editor) confirms inspection details. */
+/** Records who verified inspection details and updates status when appropriate. */
 export const setInspectionVerification = mutation({
   args: {
     propertyId: v.id("properties"),
@@ -417,13 +417,6 @@ export const setInspectionVerification = mutation({
     if (args.verified) {
       if (!propertyHasInspectorNotesContent(property)) {
         throw new Error("No inspection notes to verify yet.");
-      }
-      const lastSaver = property.inspectionNotesLastUpdatedByClerkUserId;
-      const enteredBy = property.inspectionNotesEnteredByClerkUserId;
-      /** Prefer last saver; fallback for legacy rows that have notes but never ran section-note saves. */
-      const cannotVerifyIfSameAs = lastSaver ?? enteredBy ?? null;
-      if (cannotVerifyIfSameAs && viewer.clerkUserId === cannotVerifyIfSameAs) {
-        throw new Error("You cannot verify notes you last edited. Ask another inspector or admin.");
       }
       const now = Date.now();
       const patch: Record<string, unknown> = {

@@ -17,7 +17,7 @@ export const list = query({
           .withIndex("by_hoa_street", (q) => q.eq("hoaId", viewer.hoaId).eq("streetId", street._id))
           .collect();
         const total = properties.length;
-        /** Only verified-complete counts; `review` waits on peer verification. */
+        /** Only properties in `complete` status count; `review` and others do not. */
         const complete = properties.filter((p) => p.status === "complete").length;
         const inProgress = properties.filter((p) => p.status === "inProgress").length;
         return { _id: street._id, name: street.name, total, complete, inProgress };

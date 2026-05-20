@@ -318,11 +318,8 @@ export default function PropertyReview() {
       inspectorNotesBackDraft.trim() ||
       property.inspectorNotes?.trim()
     );
-  const lastSaverId = property.inspectionNotesLastUpdatedByClerkUserId;
-  const adminViewerId = adminViewer?.clerkUserId;
-  const cannotVerifyOwn = !!lastSaverId && !!adminViewerId && adminViewerId === lastSaverId;
   const isVerified = !!property.inspectionDetailsVerifiedByClerkUserId;
-  const verifyCheckboxDisabled = !isVerified && (!hasAnyInspectorNote || cannotVerifyOwn);
+  const verifyCheckboxDisabled = !isVerified && !hasAnyInspectorNote;
 
   return (
     <div className="min-h-screen bg-[#f8f7ff]">
@@ -856,7 +853,7 @@ export default function PropertyReview() {
                   >
                     <span className="font-medium">Verify inspection details</span>
                     <span className={`block text-xs mt-0.5 ${verifyCheckboxDisabled ? "text-muted-foreground/70" : "text-muted-foreground"}`}>
-                      Another team member must confirm. You cannot verify if you last edited these notes.
+                      Check this when the inspection details above are complete and accurate.
                     </span>
                     {isVerified && property.inspectionDetailsVerifiedByClerkUserId ? (
                       <span className="block text-xs text-muted-foreground mt-1">

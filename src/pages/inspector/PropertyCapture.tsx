@@ -553,12 +553,8 @@ export default function PropertyCapture() {
 
   const nameFor = (id?: string) => (!id ? "" : displayNames?.[id]?.trim() || "Team member");
   const hasAnyNote = !!(noteFront.trim() || noteSide.trim() || noteBack.trim());
-  const lastSaverId = property.inspectionNotesLastUpdatedByClerkUserId;
-  const viewerId = viewer?.clerkUserId;
-  const cannotVerifyOwnNotes =
-    !!lastSaverId && !!viewerId && viewerId === lastSaverId;
   const isVerified = !!property.inspectionDetailsVerifiedByClerkUserId;
-  const verifyCheckboxDisabled = !isVerified && (!hasAnyNote || cannotVerifyOwnNotes);
+  const verifyCheckboxDisabled = !isVerified && !hasAnyNote;
 
   return (
     <div className="min-h-screen bg-[#f8f7ff] pb-24 flex flex-col">
@@ -825,7 +821,7 @@ export default function PropertyCapture() {
             >
               <span className="font-semibold">Verify inspection details</span>
               <span className={`block text-xs mt-0.5 ${verifyCheckboxDisabled ? "text-gray-400" : "text-gray-500"}`}>
-                Another inspector must confirm. You cannot verify if you last edited these notes.
+                Check this when the inspection details above are complete and accurate.
               </span>
               {isVerified && property.inspectionDetailsVerifiedByClerkUserId ? (
                 <span className="block text-xs text-gray-500 mt-1">
