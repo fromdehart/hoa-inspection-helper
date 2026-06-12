@@ -6,6 +6,7 @@ export type ArcReviewPosture = "strict" | "practical" | "homeownerFriendly";
 
 const POSTURE_KEY = "arcReviewPosture";
 const GUIDANCE_KEY = "arcReviewAdminGuidance";
+const SHOW_ON_PROPERTY_KEY = "arcShowApplicationOnPropertyPage";
 
 export const get = query({
   args: {},
@@ -19,6 +20,10 @@ export const get = query({
       .query("aiConfig")
       .withIndex("by_hoa_key", (q) => q.eq("hoaId", viewer.hoaId).eq("key", GUIDANCE_KEY))
       .first();
+    const showOnPropertyDoc = await ctx.db
+      .query("aiConfig")
+      .withIndex("by_hoa_key", (q) => q.eq("hoaId", viewer.hoaId).eq("key", SHOW_ON_PROPERTY_KEY))
+      .first();
     const postureRaw = postureDoc?.value ?? "";
     const posture: ArcReviewPosture =
       postureRaw === "strict" || postureRaw === "practical" || postureRaw === "homeownerFriendly"
@@ -27,6 +32,7 @@ export const get = query({
     return {
       reviewPosture: posture,
       adminGuidance: guidanceDoc?.value ?? "",
+      showArcApplicationOnPropertyPage: showOnPropertyDoc?.value === "true",
     };
   },
 });
@@ -35,6 +41,7 @@ export const set = mutation({
   args: {
     reviewPosture: v.union(v.literal("strict"), v.literal("practical"), v.literal("homeownerFriendly")),
     adminGuidance: v.string(),
+    showArcApplicationOnPropertyPage: v.boolean(),
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewerRole(ctx, ["admin"]);
@@ -56,6 +63,7 @@ export const set = mutation({
     };
     await upsert(POSTURE_KEY, args.reviewPosture);
     await upsert(GUIDANCE_KEY, args.adminGuidance);
+    await upsert(SHOW_ON_PROPERTY_KEY, args.showArcApplicationOnPropertyPage ? "true" : "false");
     return null;
   },
 });

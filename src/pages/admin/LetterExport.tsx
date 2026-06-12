@@ -9,10 +9,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 
-type LetterExportRow = {
+type ReviewRow = {
   _id: string;
   address: string;
-  html: string;
+  streetId: string;
+  streetName: string;
+  houseNumber: number;
+  aiLetterBullets: string;
+  generatedLetterHtml: string | null;
+  generatedLetterAt: number | null;
+  originalInspectorNotes: string;
   photos: Array<{
     _id: string;
     section: "front" | "side" | "back";
@@ -21,34 +27,7 @@ type LetterExportRow = {
   }>;
 };
 
-type ReviewRow = LetterExportRow & {
-  streetId: string;
-  streetName: string;
-  houseNumber: number;
-  aiLetterBullets: string;
-  originalInspectorNotes: string;
-};
-
 type SaveState = "idle" | "saving" | "saved" | "error";
-
-function combinedInspectorNotesFromProperty(p: {
-  inspectorNotes?: string;
-  inspectorNotesFront?: string;
-  inspectorNotesSide?: string;
-  inspectorNotesBack?: string;
-}): string {
-  const front = p.inspectorNotesFront?.trim() ?? "";
-  const side = p.inspectorNotesSide?.trim() ?? "";
-  const back = p.inspectorNotesBack?.trim() ?? "";
-  if (front || side || back) {
-    const parts: string[] = [];
-    if (front) parts.push(`Front:\n${front}`);
-    if (side) parts.push(`Side:\n${side}`);
-    if (back) parts.push(`Back:\n${back}`);
-    return parts.join("\n\n");
-  }
-  return p.inspectorNotes?.trim() ?? "";
-}
 
 function sanitizeFilename(s: string) {
   return s.replace(/[/\?%*:|"<>]/g, "-").slice(0, 120);
@@ -177,7 +156,7 @@ function fitIntoBox(
 
 async function appendPhotoGridPages(
   pdf: jsPDF,
-  row: LetterExportRow,
+  row: Pick<ReviewRow, "address" | "photos">,
 ): Promise<{ rendered: number; skipped: number }> {
   if (!row.photos.length) return { rendered: 0, skipped: 0 };
 
@@ -230,9 +209,12 @@ async function appendPhotoGridPages(
   return { rendered, skipped };
 }
 
-async function letterHtmlToPdfBlob(row: LetterExportRow): Promise<{ blob: Blob; rendered: number; skipped: number }> {
+async function letterHtmlToPdfBlob(
+  row: ReviewRow,
+  html: string,
+): Promise<{ blob: Blob; rendered: number; skipped: number }> {
   const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
-  renderLetterAsPlainText(pdf, row.html);
+  renderLetterAsPlainText(pdf, html);
   const { rendered, skipped } = await appendPhotoGridPages(pdf, row);
   return { blob: pdf.output("blob"), rendered, skipped };
 }
@@ -240,55 +222,25 @@ async function letterHtmlToPdfBlob(row: LetterExportRow): Promise<{ blob: Blob; 
 export default function LetterExport() {
   const navigate = useNavigate();
   const { signOut } = useClerk();
-  const [busy, setBusy] = useState(false);
+  const [generateBusy, setGenerateBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [log, setLog] = useState("");
   const [selectedStreetId, setSelectedStreetId] = useState<string>("");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [reviewed, setReviewed] = useState<Record<string, true>>({});
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [regenerateExisting, setRegenerateExisting] = useState(false);
   const [photoLightbox, setPhotoLightbox] = useState<{ url: string; title: string } | null>(null);
 
-  const lettersRaw = useQuery(api.properties.listGeneratedLetterBodies);
-  const properties = useQuery(api.properties.list, {});
-  const streets = useQuery(api.streets.list, {});
+  const reviewRowsRaw = useQuery(api.properties.listLetterReviewRows);
 
   const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
   const saveGeneratedLetterHtml = useMutation(api.properties.saveGeneratedLetterHtml);
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
   const generateLetter = useAction(api.letters.generate);
 
-  const letters = (lettersRaw ?? []) as LetterExportRow[];
-
-  const streetNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const s of streets ?? []) m.set(String(s._id), s.name);
-    return m;
-  }, [streets]);
-
-  const reviewRows = useMemo<ReviewRow[]>(() => {
-    if (!properties) return [];
-    const pMap = new Map(properties.map((p) => [String(p._id), p]));
-    return letters
-      .map((l) => {
-        const p = pMap.get(String(l._id));
-        if (!p) return null;
-        return {
-          ...l,
-          streetId: String(p.streetId),
-          streetName: streetNameById.get(String(p.streetId)) ?? "Unknown Street",
-          houseNumber: p.houseNumber,
-          aiLetterBullets: p.aiLetterBullets ?? "",
-          originalInspectorNotes: combinedInspectorNotesFromProperty(p),
-        };
-      })
-      .filter((x): x is ReviewRow => !!x)
-      .sort((a, b) => {
-        if (a.streetName !== b.streetName) return a.streetName.localeCompare(b.streetName);
-        if (a.houseNumber !== b.houseNumber) return a.houseNumber - b.houseNumber;
-        return a.address.localeCompare(b.address);
-      });
-  }, [letters, properties, streetNameById]);
+  const reviewRows = (reviewRowsRaw ?? []) as ReviewRow[];
 
   const streetGroups = useMemo(() => {
     const groupMap = new Map<string, { streetId: string; streetName: string; rows: ReviewRow[] }>();
@@ -300,6 +252,21 @@ export default function LetterExport() {
     }
     return Array.from(groupMap.values()).sort((a, b) => a.streetName.localeCompare(b.streetName));
   }, [reviewRows]);
+
+  const generatedCount = useMemo(
+    () => reviewRows.filter((row) => row.generatedLetterAt).length,
+    [reviewRows],
+  );
+
+  const generateTargets = useMemo(
+    () => reviewRows.filter((row) => regenerateExisting || !row.generatedLetterAt),
+    [reviewRows, regenerateExisting],
+  );
+
+  const exportTargets = useMemo(
+    () => reviewRows.filter((row) => row.generatedLetterHtml?.trim()),
+    [reviewRows],
+  );
 
   useEffect(() => {
     if (!selectedStreetId && streetGroups.length > 0) {
@@ -335,6 +302,7 @@ export default function LetterExport() {
   }, [activeStreetRows]);
 
   const reviewedCount = Object.keys(reviewed).length;
+  const busy = generateBusy || exportBusy;
 
   const persistDraftFor = async (row: ReviewRow) => {
     const draft = drafts[row._id] ?? row.aiLetterBullets;
@@ -346,6 +314,15 @@ export default function LetterExport() {
     } catch {
       setSaveStates((s) => ({ ...s, [row._id]: "error" }));
       throw new Error("Could not save bullet points.");
+    }
+  };
+
+  const persistAllDrafts = async () => {
+    for (const row of reviewRows) {
+      const draft = drafts[row._id] ?? row.aiLetterBullets;
+      if (draft !== row.aiLetterBullets) {
+        await persistDraftFor(row);
+      }
     }
   };
 
@@ -375,34 +352,70 @@ export default function LetterExport() {
     }
   };
 
-  const downloadZip = async () => {
-    if (!letters.length) return;
-    setBusy(true);
+  const bulkGenerateLetters = async () => {
+    if (generateTargets.length === 0) return;
+    setGenerateBusy(true);
+    setLog("");
+    try {
+      await persistAllDrafts();
+
+      const skipped: Array<{ address: string; error: string }> = [];
+      let generatedCountLocal = 0;
+
+      for (let i = 0; i < generateTargets.length; i++) {
+        const row = generateTargets[i];
+        setLog(`Generating letter ${i + 1} / ${generateTargets.length}: ${row.address}`);
+        const result = await generateLetter({ propertyId: row._id as Id<"properties"> });
+        if (result.ok === false) {
+          skipped.push({ address: row.address, error: result.error });
+          setLog(`Skipped ${row.address}: ${result.error}`);
+          continue;
+        }
+        await saveGeneratedLetterHtml({ id: row._id as Id<"properties">, html: result.html });
+        generatedCountLocal++;
+      }
+
+      const skippedSuffix =
+        skipped.length > 0
+          ? `. Skipped ${skipped.length}: ${skipped.map((s) => s.address).join(", ")}`
+          : "";
+      setLog(`Generated ${generatedCountLocal} letter(s)${skippedSuffix}.`);
+    } catch (e) {
+      console.error(e);
+      setLog("Error: " + String(e));
+    } finally {
+      setGenerateBusy(false);
+    }
+  };
+
+  const exportZip = async () => {
+    if (exportTargets.length === 0) return;
+    setExportBusy(true);
     setLog("");
     const zip = new JSZip();
     try {
-      const rowMap = new Map(reviewRows.map((r) => [r._id, r]));
-      for (const row of reviewRows) {
-        const draft = drafts[row._id] ?? row.aiLetterBullets;
-        if (draft !== row.aiLetterBullets) {
-          await persistDraftFor(row);
+      await persistAllDrafts();
+
+      let pdfCount = 0;
+      for (let i = 0; i < exportTargets.length; i++) {
+        const row = exportTargets[i];
+        const html = row.generatedLetterHtml?.trim();
+        if (!html) continue;
+
+        setLog(`Rendering ${i + 1} / ${exportTargets.length}: ${row.address} (letter + photos)`);
+        const { blob, rendered, skipped } = await letterHtmlToPdfBlob(row, html);
+        zip.file(`${sanitizeFilename(row.address)}.pdf`, blob);
+        pdfCount++;
+        if (skipped > 0) {
+          setLog(
+            `Rendering ${i + 1} / ${exportTargets.length}: ${row.address} (photos: ${rendered} added, ${skipped} skipped)`,
+          );
         }
       }
 
-      for (let i = 0; i < letters.length; i++) {
-        const baseRow = letters[i];
-        const reviewRow = rowMap.get(baseRow._id);
-        const address = reviewRow?.address ?? baseRow.address;
-        setLog(`Generating letter ${i + 1} / ${letters.length}: ${address}`);
-        const generated = await generateLetter({ propertyId: baseRow._id as Id<"properties"> });
-        const htmlForPdf = generated.html;
-        await saveGeneratedLetterHtml({ id: baseRow._id as Id<"properties">, html: generated.html });
-        setLog(`Rendering ${i + 1} / ${letters.length}: ${address} (letter + photos)`);
-        const { blob, rendered, skipped } = await letterHtmlToPdfBlob({ ...baseRow, html: htmlForPdf });
-        zip.file(`${sanitizeFilename(address)}.pdf`, blob);
-        if (skipped > 0) {
-          setLog(`Rendering ${i + 1} / ${letters.length}: ${address} (photos: ${rendered} added, ${skipped} skipped)`);
-        }
+      if (pdfCount === 0) {
+        setLog("No letters to export.");
+        return;
       }
 
       setLog("Zipping...");
@@ -413,12 +426,12 @@ export default function LetterExport() {
       a.download = `happier-block-letters-${new Date().toISOString().slice(0, 10)}.zip`;
       a.click();
       URL.revokeObjectURL(url);
-      setLog(`Done (${letters.length} PDFs). Reviewed ${reviewedCount}/${reviewRows.length}.`);
+      setLog(`Done (${pdfCount} PDFs). Reviewed ${reviewedCount}/${reviewRows.length}.`);
     } catch (e) {
       console.error(e);
       setLog("Error: " + String(e));
     } finally {
-      setBusy(false);
+      setExportBusy(false);
     }
   };
 
@@ -426,7 +439,12 @@ export default function LetterExport() {
     <div className="min-h-screen bg-[#f8f7ff]">
       <div className="gradient-admin px-4 pt-8 pb-5">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <h1 className="font-extrabold text-white text-lg">Letter Review & Export</h1>
+          <div>
+            <h1 className="font-extrabold text-white text-lg">Letter Review & Export</h1>
+            <p className="text-sm text-purple-100 mt-1">
+              Review bullets, generate letters, then export PDFs.
+            </p>
+          </div>
           <div className="flex gap-2">
             <button
               type="button"
@@ -479,12 +497,23 @@ export default function LetterExport() {
                 const rowDraft = drafts[row._id] ?? row.aiLetterBullets;
                 return (
                   <div key={row._id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div>
                         <p className="text-xs text-gray-500">{row.streetName}</p>
                         <h2 className="text-lg font-bold text-gray-800">{row.address}</h2>
                       </div>
-                      <p className="text-xs font-medium text-gray-500">{idx + 1} / {activeStreetRows.length}</p>
+                      <div className="flex items-center gap-2">
+                        {row.generatedLetterAt ? (
+                          <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
+                            Generated {new Date(row.generatedLetterAt).toLocaleString()}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">
+                            Not generated
+                          </span>
+                        )}
+                        <p className="text-xs font-medium text-gray-500">{idx + 1} / {activeStreetRows.length}</p>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -561,29 +590,64 @@ export default function LetterExport() {
           </div>
         ) : (
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-sm text-gray-500">
-            No properties with generated letters available for review.
+            {reviewRowsRaw === undefined
+              ? "Loading properties..."
+              : "No properties in review or complete status available for letter workflow."}
           </div>
         )}
 
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-4">
           <p className="text-sm text-gray-600">
-            After review, download a ZIP of PDFs built from stored letter HTML with photo appendix pages.
-          </p>
-          <p className="text-sm font-semibold text-gray-800">
-            Ready: {lettersRaw === undefined ? "..." : letters.length} letter(s)
+            Step 1: Review and edit bullet points. Step 2: Generate letters (auto-summarizes notes when needed).
+            Step 3: Export PDFs from stored letter HTML.
           </p>
           {log && (
             <p className="text-xs font-mono text-gray-500 whitespace-pre-wrap bg-gray-50 rounded-xl p-3 border border-gray-100">
               {log}
             </p>
           )}
-          <Button
-            disabled={busy || !letters.length}
-            onClick={downloadZip}
-            className="btn-bounce w-full h-12 text-base font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-lg"
-          >
-            {busy ? "Working..." : "Download ZIP of PDFs"}
-          </Button>
+
+          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-800">Generate letters</p>
+            <p className="text-xs text-gray-600">
+              {reviewRowsRaw === undefined
+                ? "..."
+                : `${generateTargets.length} property(ies) selected (${reviewRows.length - generatedCount} not yet generated)`}
+            </p>
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={regenerateExisting}
+                onChange={(e) => setRegenerateExisting(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Regenerate existing letters
+            </label>
+            <Button
+              disabled={busy || generateTargets.length === 0}
+              onClick={() => void bulkGenerateLetters()}
+              className="w-full h-11 font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-xl"
+            >
+              {generateBusy ? "Generating..." : "Generate letters"}
+            </Button>
+          </div>
+
+          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 space-y-3">
+            <p className="text-sm font-semibold text-gray-800">Export ZIP</p>
+            <p className="text-xs text-gray-600">
+              Download PDFs from letters already generated. Edit bullets and check Regenerate existing if content changed.
+            </p>
+            <p className="text-sm font-semibold text-gray-800">
+              Ready to export: {reviewRowsRaw === undefined ? "..." : exportTargets.length} letter(s)
+            </p>
+            <Button
+              disabled={busy || exportTargets.length === 0}
+              onClick={() => void exportZip()}
+              className="btn-bounce w-full h-12 text-base font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-lg"
+            >
+              {exportBusy ? "Exporting..." : "Download ZIP of PDFs"}
+            </Button>
+          </div>
         </div>
       </div>
 

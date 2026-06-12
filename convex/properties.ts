@@ -528,6 +528,66 @@ export const getLetterHtml = query({
   },
 });
 
+/** Admin letter review: all review/complete properties with bullets, letter status, notes, and photos. */
+export const listLetterReviewRows = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const all = await ctx.db
+      .query("properties")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
+    const streets = await ctx.db
+      .query("streets")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
+    const streetNameById = new Map(streets.map((s) => [s._id, s.name]));
+
+    const eligible = all.filter((p) => p.status === "review" || p.status === "complete");
+    const rows = await Promise.all(
+      eligible.map(async (p) => {
+        const photos = await ctx.db
+          .query("photos")
+          .withIndex("by_hoa_property", (q) => q.eq("hoaId", viewer.hoaId).eq("propertyId", p._id))
+          .collect();
+        const sortedPhotos = photos
+          .sort((a, b) => a.uploadedAt - b.uploadedAt)
+          .map((photo) => ({
+            _id: photo._id,
+            section: photo.section,
+            uploadedAt: photo.uploadedAt,
+            url: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
+          }))
+          .filter((photo) => photo.url.length > 0);
+        const originalInspectorNotes =
+          p.inspectorNotes?.trim() ??
+          buildCombinedInspectorNotes(
+            p.inspectorNotesFront ?? "",
+            p.inspectorNotesSide ?? "",
+            p.inspectorNotesBack ?? "",
+          );
+        return {
+          _id: p._id,
+          address: p.address,
+          streetId: p.streetId,
+          streetName: streetNameById.get(p.streetId) ?? "Unknown Street",
+          houseNumber: p.houseNumber,
+          aiLetterBullets: p.aiLetterBullets ?? "",
+          generatedLetterHtml: p.generatedLetterHtml ?? null,
+          generatedLetterAt: p.generatedLetterAt ?? null,
+          originalInspectorNotes,
+          photos: sortedPhotos,
+        };
+      }),
+    );
+    return rows.sort((a, b) => {
+      if (a.streetName !== b.streetName) return a.streetName.localeCompare(b.streetName);
+      if (a.houseNumber !== b.houseNumber) return a.houseNumber - b.houseNumber;
+      return a.address.localeCompare(b.address);
+    });
+  },
+});
+
 /** Admin PDF export: all stored letter bodies. */
 export const listGeneratedLetterBodies = query({
   args: {},

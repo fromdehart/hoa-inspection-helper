@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { uploadTemplateFile, uploadArcReferenceFile } from "@/lib/uploadClient";
 import {
   extractPdfTextInBrowser,
@@ -47,6 +48,7 @@ export default function Settings() {
   const setArcReviewSettings = useMutation(api.arcReviewSettings.set);
   const [reviewPosture, setReviewPosture] = useState<"strict" | "practical" | "homeownerFriendly">("homeownerFriendly");
   const [reviewGuidance, setReviewGuidance] = useState("");
+  const [showArcOnPropertyPage, setShowArcOnPropertyPage] = useState(false);
   const [reviewSaveState, setReviewSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const reviewAutosaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [arcRefTitle, setArcRefTitle] = useState("");
@@ -89,8 +91,13 @@ export default function Settings() {
     if (!arcReviewSettings) return;
     setReviewPosture(arcReviewSettings.reviewPosture);
     setReviewGuidance(arcReviewSettings.adminGuidance ?? "");
+    setShowArcOnPropertyPage(arcReviewSettings.showArcApplicationOnPropertyPage);
     setReviewSaveState("idle");
-  }, [arcReviewSettings?.reviewPosture, arcReviewSettings?.adminGuidance]);
+  }, [
+    arcReviewSettings?.reviewPosture,
+    arcReviewSettings?.adminGuidance,
+    arcReviewSettings?.showArcApplicationOnPropertyPage,
+  ]);
 
   useEffect(() => {
     if (!currentTemplate?._id) {
@@ -134,7 +141,8 @@ export default function Settings() {
     if (!arcReviewSettings) return;
     const unchanged =
       reviewPosture === arcReviewSettings.reviewPosture &&
-      reviewGuidance === (arcReviewSettings.adminGuidance ?? "");
+      reviewGuidance === (arcReviewSettings.adminGuidance ?? "") &&
+      showArcOnPropertyPage === arcReviewSettings.showArcApplicationOnPropertyPage;
     if (unchanged) return;
     if (reviewAutosaveRef.current) clearTimeout(reviewAutosaveRef.current);
     reviewAutosaveRef.current = setTimeout(async () => {
@@ -143,13 +151,14 @@ export default function Settings() {
         await setArcReviewSettings({
           reviewPosture,
           adminGuidance: reviewGuidance,
+          showArcApplicationOnPropertyPage: showArcOnPropertyPage,
         });
         setReviewSaveState("saved");
       } catch {
         setReviewSaveState("error");
       }
     }, 700);
-  }, [arcReviewSettings, reviewPosture, reviewGuidance, setArcReviewSettings]);
+  }, [arcReviewSettings, reviewPosture, reviewGuidance, showArcOnPropertyPage, setArcReviewSettings]);
 
   return (
     <div className="min-h-screen bg-[#f8f7ff]">
@@ -276,6 +285,19 @@ export default function Settings() {
             Tune how strict the AI should be and add local process guidance beyond official documents.
           </p>
           <div className="grid gap-3">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">Show ARC application on property pages</p>
+                <p className="text-xs text-muted-foreground">
+                  When off, the Architecture Review Committee section is hidden on each property review page.
+                </p>
+              </div>
+              <Switch
+                checked={showArcOnPropertyPage}
+                onCheckedChange={setShowArcOnPropertyPage}
+                aria-label="Show ARC application on property pages"
+              />
+            </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1">Review posture</p>
               <Select value={reviewPosture} onValueChange={(v) => setReviewPosture(v as typeof reviewPosture)}>

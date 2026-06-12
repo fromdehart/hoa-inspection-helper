@@ -2,6 +2,7 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import { LETTER_BULLET_FEW_SHOT_BLOCK } from "./lib/letterBulletFewShot";
+import { buildCombinedInspectorNotes } from "./lib/inspectorNotes";
 
 const SYSTEM_PROMPT = `You are an editor for an HOA exterior inspection program.
 
@@ -28,7 +29,13 @@ export const generateFromInspectorNotes = action({
     if (!property) {
       return { ok: false, error: "Property not found" };
     }
-    const raw = property.inspectorNotes?.trim() ?? "";
+    const raw =
+      property.inspectorNotes?.trim() ??
+      buildCombinedInspectorNotes(
+        property.inspectorNotesFront ?? "",
+        property.inspectorNotesSide ?? "",
+        property.inspectorNotesBack ?? "",
+      );
     if (!raw) {
       return { ok: false, error: "No inspector notes to process" };
     }
