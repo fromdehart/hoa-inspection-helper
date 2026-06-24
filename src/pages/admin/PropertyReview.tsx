@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
+import { Trash2 } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import type { ArcReviewFeedback } from "../../../convex/lib/arcReviewJson";
@@ -9,6 +10,16 @@ import { extractPdfTextWithOcrFallback, fileToBase64 } from "@/lib/extractPdfTex
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -91,6 +102,9 @@ export default function PropertyReview() {
     title: string;
     caption?: string;
   } | null>(null);
+  const [inspectionPhotoIndex, setInspectionPhotoIndex] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: Id<"photos"> } | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
 
   const [arcPendingFiles, setArcPendingFiles] = useState<ArcPendingFile[]>([]);
   const [arcUploadBusy, setArcUploadBusy] = useState(false);
@@ -129,6 +143,7 @@ export default function PropertyReview() {
   const setFixVerification = useMutation(api.fixPhotos.setVerification);
   const generateLetter = useAction(api.letters.generate);
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
+  const removePhotoForInspector = useAction(api.photos.removeForInspector);
   const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
   const arcReviewSettings = useQuery(api.arcReviewSettings.get, {});
   const showArcApplicationSection = arcReviewSettings?.showArcApplicationOnPropertyPage ?? false;
@@ -267,6 +282,37 @@ export default function PropertyReview() {
   };
 
   const allPhotos = photos ?? [];
+  const selectedInspectionPhoto =
+    inspectionPhotoIndex !== null ? allPhotos[inspectionPhotoIndex] : undefined;
+
+  const handleConfirmDeletePhoto = () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
+    const n = allPhotos.length;
+    const i = inspectionPhotoIndex ?? 0;
+    setDeleteSubmitting(true);
+    void removePhotoForInspector({ id, propertyId: pid })
+      .then(() => {
+        setDeleteTarget(null);
+        if (n <= 1) {
+          setInspectionPhotoIndex(null);
+        } else {
+          setInspectionPhotoIndex(Math.min(i, n - 2));
+        }
+        showToast("Photo deleted");
+      })
+      .catch((err) => {
+        console.error(err);
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(
+          msg.includes("upload server")
+            ? `Photo was removed from the inspection, but the file on the upload server could not be deleted: ${msg}`
+            : msg || "Could not delete photo. Please try again.",
+        );
+      })
+      .finally(() => setDeleteSubmitting(false));
+  };
+
   const handleGenerate = async () => {
     setGenerating(true);
     try {
@@ -370,13 +416,7 @@ export default function PropertyReview() {
                     <button
                       type="button"
                       className="w-full rounded border overflow-hidden text-left transition-opacity hover:opacity-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      onClick={() =>
-                        setPhotoLightbox({
-                          url: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
-                          title: `Photo ${idx + 1}`,
-                          caption: photo.inspectorNote?.trim() || undefined,
-                        })
-                      }
+                      onClick={() => setInspectionPhotoIndex(idx)}
                     >
                       <img
                         src={photo.publicUrl ?? photo.thumbnailPublicUrl ?? ""}
@@ -983,6 +1023,97 @@ export default function PropertyReview() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={inspectionPhotoIndex !== null && !!selectedInspectionPhoto}
+        onOpenChange={(open) => {
+          if (!open) setInspectionPhotoIndex(null);
+        }}
+      >
+        <DialogContent className="max-w-[min(95vw,56rem)] gap-0 p-0 sm:max-w-[min(95vw,56rem)]">
+          {selectedInspectionPhoto && inspectionPhotoIndex !== null && (
+            <>
+              <DialogHeader className="space-y-0 px-6 pt-6 pb-2 pr-14 text-left">
+                <DialogTitle>
+                  Photo {inspectionPhotoIndex + 1} / {allPhotos.length}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="px-6 pb-4">
+                <img
+                  src={
+                    selectedInspectionPhoto.publicUrl ??
+                    selectedInspectionPhoto.thumbnailPublicUrl ??
+                    ""
+                  }
+                  alt=""
+                  className="mx-auto max-h-[min(85vh,880px)] w-full object-contain rounded-md bg-muted"
+                />
+              </div>
+              {selectedInspectionPhoto.inspectorNote?.trim() ? (
+                <p className="border-t px-6 py-3 text-sm text-muted-foreground whitespace-pre-wrap">
+                  {selectedInspectionPhoto.inspectorNote}
+                </p>
+              ) : null}
+              <DialogFooter className="border-t px-6 py-4 sm:justify-between">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteTarget({ id: selectedInspectionPhoto._id })}
+                >
+                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                  Delete photo
+                </Button>
+                <Button variant="outline" size="sm" asChild>
+                  <a
+                    href={
+                      selectedInspectionPhoto.publicUrl ??
+                      selectedInspectionPhoto.thumbnailPublicUrl ??
+                      ""
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open in new tab
+                  </a>
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteSubmitting) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-[min(92vw,22rem)] z-[100] border-gray-200">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this photo?</AlertDialogTitle>
+            <AlertDialogDescription className="text-left">
+              It will be removed from this inspection. Linked violation notes stay, but will no longer show this
+              image. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col">
+            <AlertDialogCancel className="w-full sm:w-full" disabled={deleteSubmitting}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="w-full bg-red-600 text-white hover:bg-red-700 focus:ring-red-600 sm:w-full"
+              disabled={deleteSubmitting}
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDeletePhoto();
+              }}
+            >
+              {deleteSubmitting ? "Deleting…" : "Delete photo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={!!photoLightbox}
