@@ -1,5 +1,7 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import {
   buildLetterHtmlSync,
   DEFAULT_LETTER_TEMPLATE,
@@ -303,6 +305,91 @@ const priorLetterRowValidator = v.object({
   priorOwnerLetterNotes2024: v.string(),
 });
 
+const homeownerNamesRowValidator = v.object({
+  streetName: v.string(),
+  houseNumber: v.number(),
+  homeownerNames: v.string(),
+});
+
+function requireDemoSeedSecret(provided: string) {
+  const expected = process.env.DEMO_SEED_SECRET;
+  if (!expected || expected.length < 6) {
+    throw new Error("DEMO_SEED_SECRET is not configured on Convex.");
+  }
+  if (provided !== expected) {
+    throw new Error("Invalid import secret.");
+  }
+}
+
+async function bulkPatchHomeownerNamesForHoa(
+  ctx: MutationCtx,
+  hoaId: Id<"hoas">,
+  rows: Array<{ streetName: string; houseNumber: number; homeownerNames: string }>,
+) {
+  let patched = 0;
+  let skippedNoStreet = 0;
+  let skippedNoProperty = 0;
+  for (const row of rows) {
+    const streetDoc = await ctx.db
+      .query("streets")
+      .withIndex("by_hoa_name", (q) => q.eq("hoaId", hoaId).eq("name", row.streetName))
+      .first();
+    if (!streetDoc) {
+      skippedNoStreet++;
+      continue;
+    }
+    const onStreet = await ctx.db
+      .query("properties")
+      .withIndex("by_hoa_street", (q) => q.eq("hoaId", hoaId).eq("streetId", streetDoc._id))
+      .collect();
+    const existing = onStreet.find((p) => p.houseNumber === row.houseNumber);
+    if (!existing) {
+      skippedNoProperty++;
+      continue;
+    }
+    await ctx.db.patch(existing._id, {
+      homeownerNames: row.homeownerNames.trim(),
+    });
+    patched++;
+  }
+  return {
+    patched,
+    skippedNoStreet,
+    skippedNoProperty,
+    total: rows.length,
+  };
+}
+
+/** Patch owner names from contact list CSV (existing properties only). */
+export const bulkPatchHomeownerNames = mutation({
+  args: { rows: v.array(homeownerNamesRowValidator) },
+  handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    return bulkPatchHomeownerNamesForHoa(ctx, viewer.hoaId, args.rows);
+  },
+});
+
+/** Script import for owner contact CSV (protected by Convex DEMO_SEED_SECRET). */
+export const bulkPatchHomeownerNamesWithSecret = mutation({
+  args: {
+    secret: v.string(),
+    hoaSlug: v.optional(v.string()),
+    rows: v.array(homeownerNamesRowValidator),
+  },
+  handler: async (ctx, args) => {
+    requireDemoSeedSecret(args.secret);
+    const slug = args.hoaSlug ?? "ridge-top-terrace";
+    const hoa = await ctx.db
+      .query("hoas")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .first();
+    if (!hoa) {
+      throw new Error(`HOA not found for slug: ${slug}`);
+    }
+    return bulkPatchHomeownerNamesForHoa(ctx, hoa._id, args.rows);
+  },
+});
+
 /** Patch archival 2024 letter notes from Word import (existing properties only). */
 export const bulkPatchPriorOwnerLetterNotes2024 = mutation({
   args: { rows: v.array(priorLetterRowValidator) },
@@ -582,6 +669,127 @@ export const listLetterReviewRows = query({
     );
     return rows.sort((a, b) => {
       if (a.streetName !== b.streetName) return a.streetName.localeCompare(b.streetName);
+      if (a.houseNumber !== b.houseNumber) return a.houseNumber - b.houseNumber;
+      return a.address.localeCompare(b.address);
+    });
+  },
+});
+
+function formatExportDate(ms: number | undefined): string {
+  if (ms === undefined) return "";
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+const csvExportRowValidator = v.object({
+  propertyId: v.id("properties"),
+  street: v.string(),
+  houseNumber: v.number(),
+  address: v.string(),
+  homeownerNames: v.string(),
+  email: v.string(),
+  status: propertyStatusValidator,
+  letterSentAt: v.string(),
+  generatedLetterAt: v.string(),
+  inspectionDetailsVerifiedAt: v.string(),
+  inspectionNotesEnteredAt: v.string(),
+  inspectionNotesLastUpdatedAt: v.string(),
+  inspectorNotesFront: v.string(),
+  inspectorNotesSide: v.string(),
+  inspectorNotesBack: v.string(),
+  inspectorNotes: v.string(),
+  aiLetterBullets: v.string(),
+  previousCitations2024: v.string(),
+  previousFrontObs: v.string(),
+  previousBackObs: v.string(),
+  previousInspectorComments: v.string(),
+  previousInspectionSummary: v.string(),
+  priorOwnerLetterNotes2024: v.string(),
+  priorCompletedWorkResponse: v.string(),
+  photoCountFront: v.number(),
+  photoCountSide: v.number(),
+  photoCountBack: v.number(),
+  photoCountTotal: v.number(),
+  fixPhotoCount: v.number(),
+  fixPhotoPendingCount: v.number(),
+});
+
+/** Admin CSV export: one flat row per property with inspection workflow and photo counts. */
+export const listForCsvExport = query({
+  args: {},
+  returns: v.array(csvExportRowValidator),
+  handler: async (ctx) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const all = await ctx.db
+      .query("properties")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
+    const streets = await ctx.db
+      .query("streets")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
+    const streetNameById = new Map(streets.map((s) => [s._id, s.name]));
+
+    const rows = await Promise.all(
+      all.map(async (p) => {
+        const photos = await ctx.db
+          .query("photos")
+          .withIndex("by_hoa_property", (q) => q.eq("hoaId", viewer.hoaId).eq("propertyId", p._id))
+          .collect();
+        const fixPhotos = await ctx.db
+          .query("fixPhotos")
+          .withIndex("by_hoa_property", (q) => q.eq("hoaId", viewer.hoaId).eq("propertyId", p._id))
+          .collect();
+
+        const photoCountFront = photos.filter((photo) => photo.section === "front").length;
+        const photoCountSide = photos.filter((photo) => photo.section === "side").length;
+        const photoCountBack = photos.filter((photo) => photo.section === "back").length;
+        const fixPhotoPendingCount = fixPhotos.filter((photo) => photo.verificationStatus === "pending").length;
+
+        const inspectorNotes =
+          p.inspectorNotes?.trim() ??
+          buildCombinedInspectorNotes(
+            p.inspectorNotesFront ?? "",
+            p.inspectorNotesSide ?? "",
+            p.inspectorNotesBack ?? "",
+          );
+
+        return {
+          propertyId: p._id,
+          street: streetNameById.get(p.streetId) ?? "Unknown Street",
+          houseNumber: p.houseNumber,
+          address: p.address,
+          homeownerNames: p.homeownerNames ?? "",
+          email: p.email ?? "",
+          status: p.status,
+          letterSentAt: formatExportDate(p.letterSentAt),
+          generatedLetterAt: formatExportDate(p.generatedLetterAt),
+          inspectionDetailsVerifiedAt: formatExportDate(p.inspectionDetailsVerifiedAt),
+          inspectionNotesEnteredAt: formatExportDate(p.inspectionNotesEnteredAt),
+          inspectionNotesLastUpdatedAt: formatExportDate(p.inspectionNotesLastUpdatedAt),
+          inspectorNotesFront: p.inspectorNotesFront ?? "",
+          inspectorNotesSide: p.inspectorNotesSide ?? "",
+          inspectorNotesBack: p.inspectorNotesBack ?? "",
+          inspectorNotes,
+          aiLetterBullets: p.aiLetterBullets ?? "",
+          previousCitations2024: p.previousCitations2024 ?? "",
+          previousFrontObs: p.previousFrontObs ?? "",
+          previousBackObs: p.previousBackObs ?? "",
+          previousInspectorComments: p.previousInspectorComments ?? "",
+          previousInspectionSummary: p.previousInspectionSummary ?? "",
+          priorOwnerLetterNotes2024: p.priorOwnerLetterNotes2024 ?? "",
+          priorCompletedWorkResponse: p.priorCompletedWorkResponse ?? "",
+          photoCountFront,
+          photoCountSide,
+          photoCountBack,
+          photoCountTotal: photos.length,
+          fixPhotoCount: fixPhotos.length,
+          fixPhotoPendingCount,
+        };
+      }),
+    );
+
+    return rows.sort((a, b) => {
+      if (a.street !== b.street) return a.street.localeCompare(b.street);
       if (a.houseNumber !== b.houseNumber) return a.houseNumber - b.houseNumber;
       return a.address.localeCompare(b.address);
     });

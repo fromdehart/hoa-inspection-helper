@@ -6,6 +6,40 @@ import { Menu, Search, X } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import JSZip from "jszip";
+import { downloadCsv, rowsToCsv } from "@/lib/csvExport";
+
+const CSV_EXPORT_HEADERS = [
+  "propertyId",
+  "street",
+  "houseNumber",
+  "address",
+  "homeownerNames",
+  "email",
+  "status",
+  "letterSentAt",
+  "generatedLetterAt",
+  "inspectionDetailsVerifiedAt",
+  "inspectionNotesEnteredAt",
+  "inspectionNotesLastUpdatedAt",
+  "inspectorNotesFront",
+  "inspectorNotesSide",
+  "inspectorNotesBack",
+  "inspectorNotes",
+  "aiLetterBullets",
+  "previousCitations2024",
+  "previousFrontObs",
+  "previousBackObs",
+  "previousInspectorComments",
+  "previousInspectionSummary",
+  "priorOwnerLetterNotes2024",
+  "priorCompletedWorkResponse",
+  "photoCountFront",
+  "photoCountSide",
+  "photoCountBack",
+  "photoCountTotal",
+  "fixPhotoCount",
+  "fixPhotoPendingCount",
+] as const;
 
 type StatusFilter = "all" | "notStarted" | "inProgress" | "review" | "complete";
 type LetterFilter = "all" | "needsGeneration" | "generated" | "sent";
@@ -58,6 +92,7 @@ export default function Dashboard() {
   const [search, setSearch] = useState("");
   const [csvUploading, setCsvUploading] = useState(false);
   const [photoExporting, setPhotoExporting] = useState(false);
+  const [dataExporting, setDataExporting] = useState(false);
   const [photoExportLog, setPhotoExportLog] = useState("");
   const [toast, setToast] = useState("");
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
@@ -68,6 +103,7 @@ export default function Dashboard() {
   });
   const streets = useQuery(api.streets.list);
   const photoExportRows = useQuery(api.photos.listForZipExport);
+  const csvExportRows = useQuery(api.properties.listForCsvExport);
   const importFromCSV = useMutation(api.properties.importFromCSV);
 
   const streetMap = new Map(streets?.map((s) => [s._id, s.name]) ?? []);
@@ -191,6 +227,30 @@ export default function Dashboard() {
     }
   };
 
+  const handleDataExport = () => {
+    if (!csvExportRows?.length) {
+      setToast("No property data found to export");
+      setTimeout(() => setToast(""), 4000);
+      return;
+    }
+
+    setDataExporting(true);
+    try {
+      const csvText = rowsToCsv([...CSV_EXPORT_HEADERS], csvExportRows);
+      const slug = viewer?.hoaSlug?.trim() || "community";
+      const date = new Date().toISOString().slice(0, 10);
+      downloadCsv(`${slug}-inspection-export-${date}.csv`, csvText);
+      setToast(`Exported ${csvExportRows.length} properties to CSV`);
+      setTimeout(() => setToast(""), 5000);
+    } catch (err) {
+      console.error(err);
+      setToast("Data export failed: " + String(err));
+      setTimeout(() => setToast(""), 5000);
+    } finally {
+      setDataExporting(false);
+    }
+  };
+
   const tabs: { value: StatusFilter; label: string; emoji: string }[] = [
     { value: "all", label: "All", emoji: "🏘️" },
     { value: "notStarted", label: "Not Started", emoji: "⏳" },
@@ -232,6 +292,14 @@ export default function Dashboard() {
             >
               📄 Export Letters
             </button>
+            <button
+              type="button"
+              disabled={dataExporting || !csvExportRows}
+              className="hidden md:inline-flex text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors disabled:opacity-50"
+              onClick={handleDataExport}
+            >
+              {dataExporting ? "⏳ Exporting…" : "📊 Export Data CSV"}
+            </button>
             <Sheet open={adminMenuOpen} onOpenChange={setAdminMenuOpen}>
               <SheetTrigger asChild>
                 <button
@@ -259,6 +327,17 @@ export default function Dashboard() {
                     }}
                   >
                     📄 Export Letters
+                  </button>
+                  <button
+                    type="button"
+                    disabled={dataExporting || !csvExportRows}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50 md:hidden"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      handleDataExport();
+                    }}
+                  >
+                    {dataExporting ? "⏳ Exporting Data…" : "📊 Export Data CSV"}
                   </button>
                   <button
                     type="button"
@@ -303,6 +382,17 @@ export default function Dashboard() {
                     }}
                   >
                     👥 Team Members
+                  </button>
+                  <button
+                    type="button"
+                    disabled={dataExporting || !csvExportRows}
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50"
+                    onClick={() => {
+                      setAdminMenuOpen(false);
+                      handleDataExport();
+                    }}
+                  >
+                    {dataExporting ? "⏳ Exporting Data…" : "📊 Export Data CSV"}
                   </button>
                   <button
                     type="button"
