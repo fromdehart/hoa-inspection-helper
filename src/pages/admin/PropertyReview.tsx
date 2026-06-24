@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { Trash2 } from "lucide-react";
+import { Trash2, ArrowRightLeft } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import type { ArcReviewFeedback } from "../../../convex/lib/arcReviewJson";
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MovePhotoDialog } from "@/components/MovePhotoDialog";
 
 type AdminFieldsDraft = {
   previousInspectionSummary: string;
@@ -105,6 +106,7 @@ export default function PropertyReview() {
   const [inspectionPhotoIndex, setInspectionPhotoIndex] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: Id<"photos"> } | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
 
   const [arcPendingFiles, setArcPendingFiles] = useState<ArcPendingFile[]>([]);
   const [arcUploadBusy, setArcUploadBusy] = useState(false);
@@ -1055,15 +1057,26 @@ export default function PropertyReview() {
                 </p>
               ) : null}
               <DialogFooter className="border-t px-6 py-4 sm:justify-between">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setDeleteTarget({ id: selectedInspectionPhoto._id })}
-                >
-                  <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
-                  Delete photo
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setMoveDialogOpen(true)}
+                  >
+                    <ArrowRightLeft className="h-4 w-4 shrink-0" aria-hidden />
+                    Move to another property
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setDeleteTarget({ id: selectedInspectionPhoto._id })}
+                  >
+                    <Trash2 className="h-4 w-4 shrink-0" aria-hidden />
+                    Delete photo
+                  </Button>
+                </div>
                 <Button variant="outline" size="sm" asChild>
                   <a
                     href={
@@ -1114,6 +1127,19 @@ export default function PropertyReview() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <MovePhotoDialog
+        open={moveDialogOpen}
+        onOpenChange={setMoveDialogOpen}
+        photo={selectedInspectionPhoto ?? null}
+        fromPropertyId={pid}
+        currentStreetId={property.streetId}
+        onMoved={(toAddress) => {
+          setMoveDialogOpen(false);
+          setInspectionPhotoIndex(null);
+          showToast(`Photo moved to ${toAddress}`);
+        }}
+      />
 
       <Dialog
         open={!!photoLightbox}

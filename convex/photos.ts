@@ -179,6 +179,46 @@ export const updateNote = mutation({
   },
 });
 
+/** Move a photo to another property (Convex record only; VPS paths unchanged). */
+export const reassignToProperty = mutation({
+  args: {
+    id: v.id("photos"),
+    fromPropertyId: v.id("properties"),
+    toPropertyId: v.id("properties"),
+    section: v.optional(v.union(v.literal("front"), v.literal("side"), v.literal("back"))),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    if (args.fromPropertyId === args.toPropertyId) {
+      throw new Error("Photo is already on this property.");
+    }
+
+    const photo = await ctx.db.get(args.id);
+    if (!photo || photo.hoaId !== viewer.hoaId) {
+      throw new Error("Photo not found.");
+    }
+    if (photo.propertyId !== args.fromPropertyId) {
+      throw new Error("Photo does not belong to this property.");
+    }
+
+    const toProperty = await ctx.db.get(args.toPropertyId);
+    if (!toProperty || !toProperty.hoaId || toProperty.hoaId !== viewer.hoaId) {
+      throw new Error("Target property not found.");
+    }
+
+    await ctx.db.patch(args.id, {
+      propertyId: args.toPropertyId,
+      ...(args.section ? { section: args.section } : {}),
+    });
+
+    if (toProperty.status === "notStarted") {
+      await ctx.db.patch(args.toPropertyId, { status: "inProgress" });
+    }
+
+    return { ok: true as const, toAddress: toProperty.address };
+  },
+});
+
 /**
  * Inspector: remove photo from Convex, then delete the blob on the upload VPS.
  * Set Convex env `UPLOAD_SERVER_URL` (e.g. https://hoauploads.example.com) and `UPLOAD_DELETE_TOKEN` (same as VPS).

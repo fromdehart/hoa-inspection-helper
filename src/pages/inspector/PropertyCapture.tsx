@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
-import { ChevronDown, Loader2, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, Trash2, ArrowRightLeft } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { buildInspectorThumbnailJpeg } from "@/lib/thumbnailImage";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MovePhotoDialog } from "@/components/MovePhotoDialog";
 
 /** Max parallel uploads per batch (mobile uplink is usually the bottleneck; 4 is a good balance). */
 const UPLOAD_CONCURRENCY = 4;
@@ -97,6 +98,7 @@ export default function PropertyCapture() {
   const [nextHouseModalOpen, setNextHouseModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: Id<"photos"> } | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -1029,6 +1031,14 @@ export default function PropertyCapture() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/90 hover:bg-sky-600 text-white text-sm font-semibold transition-colors"
+                  onClick={() => setMoveDialogOpen(true)}
+                >
+                  <ArrowRightLeft className="h-4 w-4 shrink-0" aria-hidden />
+                  Move
+                </button>
+                <button
+                  type="button"
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/90 hover:bg-red-600 text-white text-sm font-semibold transition-colors"
                   onClick={() => setDeleteTarget({ id: selectedPhoto._id })}
                 >
@@ -1074,6 +1084,20 @@ export default function PropertyCapture() {
             </div>
           </div>
         </div>
+      )}
+
+      {property?.streetId && (
+        <MovePhotoDialog
+          open={moveDialogOpen}
+          onOpenChange={setMoveDialogOpen}
+          photo={selectedPhoto ?? null}
+          fromPropertyId={pid}
+          currentStreetId={property.streetId}
+          onMoved={() => {
+            setMoveDialogOpen(false);
+            setViewerOpen(false);
+          }}
+        />
       )}
     </div>
   );
