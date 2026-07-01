@@ -32,6 +32,10 @@ uploads/
 # Convex export zips from scripts/backup-convex.sh (VPS or local; do not commit)
 backups/
 
+# B2 backup secrets (VPS only; copy from scripts/*.example)
+**/b2.env
+**/b2-master.env
+
 # Personal configuration (gitignored for security)
 .config/
 
