@@ -22,7 +22,8 @@
     "seed:demo": "tsx scripts/seed-demo-hoa.ts",
     "backup:convex": "bash scripts/backup-convex.sh",
     "backup:photos": "bash scripts/backup-photos-b2.sh",
-    "setup:photos-backup": "bash scripts/run-b2-setup-on-vps.sh"
+    "setup:photos-backup": "bash scripts/run-b2-setup-on-vps.sh",
+    "setup:convex-backup": "bash scripts/run-b2-convex-setup-on-vps.sh"
   },
   "dependencies": {
     "@clerk/backend": "^2.33.3",

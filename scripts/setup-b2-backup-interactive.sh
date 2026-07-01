@@ -54,5 +54,8 @@ if [[ "${RUN_NOW,,}" == "y" || "${RUN_NOW,,}" == "yes" ]]; then
 fi
 
 echo ""
-echo "Done. Nightly backup runs at 03:45 via cron."
-echo "Manual backup: $HOME/bin/backup-photos-b2.sh"
+echo "Done. Nightly photo backup runs at 03:45 via cron."
+echo "Manual photo backup: $HOME/bin/backup-photos-b2.sh"
+echo ""
+echo "For Convex DB exports to a separate B2 bucket, run:"
+echo "  bash $SCRIPT_DIR/setup-b2-convex-interactive.sh"
