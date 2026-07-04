@@ -25,6 +25,20 @@ export default defineSchema({
     .index("by_hoa", ["hoaId"])
     .index("by_hoa_role", ["hoaId", "role"]),
 
+  platformAdmins: defineTable({
+    clerkUserId: v.string(),
+    email: v.optional(v.string()),
+    fullName: v.optional(v.string()),
+    createdAt: v.number(),
+    createdByClerkUserId: v.optional(v.string()),
+  }).index("by_clerk_user", ["clerkUserId"]),
+
+  platformAdminSessions: defineTable({
+    clerkUserId: v.string(),
+    actingHoaId: v.optional(v.id("hoas")),
+    updatedAt: v.number(),
+  }).index("by_clerk_user", ["clerkUserId"]),
+
   streets: defineTable({
     hoaId: v.optional(v.id("hoas")),
     name: v.string(),

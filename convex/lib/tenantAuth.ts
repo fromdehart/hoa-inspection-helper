@@ -1,4 +1,5 @@
 import type { Id } from "../_generated/dataModel";
+import { getActingHoaId, isPlatformAdmin } from "./platformAuth";
 
 type MembershipRole = "admin" | "inspector";
 
@@ -26,47 +27,65 @@ export type ViewerContext = {
   clerkUserId: string;
   hoaId: Id<"hoas">;
   role: MembershipRole;
+  isPlatformAdmin: boolean;
+  isActingAsAdmin: boolean;
 };
 
 /** For public queries: no identity, membership, or active HOA → null (no throw). */
 export async function tryGetViewerContext(ctx: CtxWithDbAndAuth): Promise<ViewerContext | null> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity?.subject) return null;
+
+  const platformAdmin = await isPlatformAdmin(ctx, identity.subject);
+  const actingHoaId = platformAdmin ? await getActingHoaId(ctx, identity.subject) : null;
+
+  if (platformAdmin && actingHoaId) {
+    const hoa = await ctx.db.get(actingHoaId);
+    if (!hoa || hoa.status !== "active") return null;
+    return {
+      clerkUserId: identity.subject,
+      hoaId: actingHoaId,
+      role: "admin",
+      isPlatformAdmin: true,
+      isActingAsAdmin: true,
+    };
+  }
+
   const membership = await ctx.db
     .query("userHoaMemberships")
     .withIndex("by_clerk_user", (q) => q.eq("clerkUserId", identity.subject))
     .first();
-  if (!membership) return null;
+  if (!membership) {
+    if (platformAdmin) {
+      return null;
+    }
+    return null;
+  }
   const hoa = await ctx.db.get(membership.hoaId);
   if (!hoa || hoa.status !== "active") return null;
   return {
     clerkUserId: identity.subject,
     hoaId: membership.hoaId,
     role: membership.role,
+    isPlatformAdmin: platformAdmin,
+    isActingAsAdmin: false,
   };
 }
 
 export async function requireViewerContext(ctx: CtxWithDbAndAuth): Promise<ViewerContext> {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.subject) {
-    throw new Error("Authentication required.");
-  }
-  const membership = await ctx.db
-    .query("userHoaMemberships")
-    .withIndex("by_clerk_user", (q) => q.eq("clerkUserId", identity.subject))
-    .first();
-  if (!membership) {
+  const viewer = await tryGetViewerContext(ctx);
+  if (!viewer) {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.subject) {
+      throw new Error("Authentication required.");
+    }
+    const platformAdmin = await isPlatformAdmin(ctx, identity.subject);
+    if (platformAdmin) {
+      throw new Error("Select a neighborhood to act as admin, or use your HOA membership.");
+    }
     throw new Error("No HOA membership found for this user.");
   }
-  const hoa = await ctx.db.get(membership.hoaId);
-  if (!hoa || hoa.status !== "active") {
-    throw new Error("Assigned HOA is inactive or missing.");
-  }
-  return {
-    clerkUserId: identity.subject,
-    hoaId: membership.hoaId,
-    role: membership.role,
-  };
+  return viewer;
 }
 
 export async function requireViewerRole(
@@ -79,4 +98,3 @@ export async function requireViewerRole(
   }
   return viewer;
 }
-

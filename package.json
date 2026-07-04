@@ -20,6 +20,8 @@
     "build:fewshot-bullets": "tsx scripts/build-letter-bullet-fewshot.ts",
     "seed:ridge-top-terrace": "tsx scripts/seed-ridge-top-terrace.ts",
     "seed:demo": "tsx scripts/seed-demo-hoa.ts",
+    "seed:platform-admin": "tsx scripts/seed-platform-admin.ts",
+    "bootstrap:platform-admin": "bash scripts/bootstrap-platform-admin.sh",
     "backup:convex": "bash scripts/backup-convex.sh",
     "backup:photos": "bash scripts/backup-photos-b2.sh",
     "setup:photos-backup": "bash scripts/run-b2-setup-on-vps.sh",

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -35,17 +35,6 @@ export default function AdminGate() {
     navigate("/admin/dashboard", { replace: true });
   }, [isLoaded, isSignedIn, isAdmin, navigate]);
 
-  useEffect(() => {
-    if (!isLoaded || !isSignedIn) return;
-    if (isAdmin) return;
-    authLog("AdminGate", "blocked_not_admin", {
-      path: location.pathname,
-      primaryRole: role,
-      user: authUserSnapshot(user),
-      hint: "Assign a user HOA membership with admin role.",
-    });
-  }, [isLoaded, isSignedIn, role, isAdmin, user, location.pathname]);
-
   if (!isLoaded) {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
   }
@@ -67,17 +56,24 @@ export default function AdminGate() {
     );
   }
 
+  if (!viewer.role && viewer.isPlatformAdmin) {
+    return <Navigate to="/platform/hoas" replace />;
+  }
+
   if (!isAdmin) {
     return (
       <div className="min-h-screen gradient-hero flex items-center justify-center px-6">
-        <div className="w-full max-w-sm">
-          <div className="text-center mb-8">
-            <div className="text-6xl mb-3">🚫</div>
-            <h1 className="text-3xl font-extrabold text-white">Admin Access Required</h1>
-            <p className="text-purple-200 mt-1">
-              Your HOA membership does not include admin access for this community.
-            </p>
-          </div>
+        <div className="w-full max-w-sm text-center">
+          <div className="text-6xl mb-3">🚫</div>
+          <h1 className="text-3xl font-extrabold text-white">Admin Access Required</h1>
+          <p className="text-purple-200 mt-1">
+            Your HOA membership does not include admin access for this community.
+          </p>
+          {viewer.isPlatformAdmin && (
+            <Link to="/platform/hoas" className="mt-4 inline-block text-sky-200 hover:text-white text-sm">
+              Go to Platform Admin →
+            </Link>
+          )}
           <button
             type="button"
             className="mt-6 w-full text-center text-white/70 hover:text-white text-sm transition-colors"

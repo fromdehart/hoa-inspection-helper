@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, useUser } from "@clerk/clerk-react";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -66,6 +66,10 @@ export default function InspectorGate() {
     );
   }
 
+  if (!viewer.role && viewer.isPlatformAdmin) {
+    return <Navigate to="/platform/hoas" replace />;
+  }
+
   if (!canInspect) {
     return (
       <div className="min-h-screen gradient-hero flex items-center justify-center px-6">
@@ -77,6 +81,11 @@ export default function InspectorGate() {
               Your HOA membership does not include inspector or admin access for this community.
             </p>
           </div>
+          {viewer.isPlatformAdmin && (
+            <Link to="/platform/hoas" className="mt-4 inline-block text-sky-200 hover:text-white text-sm">
+              Go to Platform Admin →
+            </Link>
+          )}
           <button
             type="button"
             className="mt-6 w-full text-center text-white/70 hover:text-white text-sm transition-colors"

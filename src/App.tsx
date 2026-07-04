@@ -13,6 +13,9 @@ import PropertyList from "./pages/inspector/PropertyList";
 import PropertyCapture from "./pages/inspector/PropertyCapture";
 import SignInPage from "./pages/auth/SignInPage";
 import RoleSignInLanding from "./pages/RoleSignInLanding";
+import PlatformGate from "./pages/platform/PlatformGate";
+import PlatformHoaList from "./pages/platform/PlatformHoaList";
+import PlatformHoaDetail from "./pages/platform/PlatformHoaDetail";
 import { MembershipDisplayNameSync } from "./components/MembershipDisplayNameSync";
 
 const App = () => {
@@ -24,6 +27,9 @@ const App = () => {
           <Route path="/login" element={<RoleSignInLanding />} />
           {/* Clerk MFA / email steps use /sign-in/factor-one, etc. — splat keeps them on this page */}
           <Route path="/sign-in/*" element={<SignInPage />} />
+          <Route path="/platform" element={<PlatformGate />} />
+          <Route path="/platform/hoas" element={<PlatformHoaList />} />
+          <Route path="/platform/hoa/:hoaId" element={<PlatformHoaDetail />} />
           <Route path="/admin" element={<AdminGate />} />
           <Route
             path="/admin/dashboard"

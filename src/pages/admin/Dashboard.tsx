@@ -49,6 +49,7 @@ function parseCSV(text: string): Array<{
   streetName: string;
   houseNumber: number;
   email?: string;
+  homeownerNames?: string;
 }> {
   const lines = text.trim().split("\n");
   if (lines.length < 2) return [];
@@ -58,6 +59,9 @@ function parseCSV(text: string): Array<{
   const streetIdx = headers.findIndex((h) => h === "street");
   const houseIdx = headers.findIndex((h) => h === "housenumber");
   const emailIdx = headers.findIndex((h) => h === "email");
+  const homeownerIdx = headers.findIndex(
+    (h) => h === "homeownernames" || h === "homeowner" || h === "owner",
+  );
 
   if (addressIdx === -1 || streetIdx === -1 || houseIdx === -1) return [];
 
@@ -68,8 +72,10 @@ function parseCSV(text: string): Array<{
     const streetName = cols[streetIdx];
     const houseNumber = parseInt(cols[houseIdx], 10);
     const email = emailIdx >= 0 ? cols[emailIdx] || undefined : undefined;
+    const homeownerNames =
+      homeownerIdx >= 0 ? cols[homeownerIdx] || undefined : undefined;
     if (address && streetName && !isNaN(houseNumber)) {
-      rows.push({ address, streetName, houseNumber, email });
+      rows.push({ address, streetName, houseNumber, email, homeownerNames });
     }
   }
   return rows;

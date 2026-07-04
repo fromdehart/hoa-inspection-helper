@@ -22,6 +22,9 @@
     },
     "DEMO_SEED_SECRET": {
       "description": "Secret for api.demoSeed.seedDemoHappierBlock (min 6 chars; use a long random value on shared deployments). Used by npm run seed:demo."
+    },
+    "PLATFORM_BOOTSTRAP_SECRET": {
+      "description": "Secret for api.platform.bootstrapPlatformAdmin. Used by npm run seed:platform-admin."
     }
   }
 }
