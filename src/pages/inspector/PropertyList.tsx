@@ -33,7 +33,10 @@ export default function PropertyList() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f8f7ff] pb-24">
-      <div className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 px-4 pt-8 pb-5 shadow-md">
+      <div
+        className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 px-4 pb-5 shadow-md"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 2rem)" }}
+      >
         <div className="relative z-[1] flex items-center justify-between gap-2 mb-2">
           <button
             type="button"

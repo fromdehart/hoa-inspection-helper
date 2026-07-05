@@ -64,7 +64,10 @@ export default function HomeLayout() {
   return (
     <HomeContext.Provider value={ctxValue}>
       <div className="min-h-screen bg-slate-50 flex flex-col">
-        <header className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
+        <header
+          className="sticky top-0 z-10 bg-white border-b border-slate-200 px-4 pb-3 flex items-center gap-3"
+          style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.75rem)" }}
+        >
           <div className="min-w-0 flex-1">
             <p className="text-xs text-slate-500">{selected?.hoaName || "Your HOA"}</p>
             {properties.length > 1 ? (

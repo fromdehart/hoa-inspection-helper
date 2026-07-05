@@ -66,10 +66,21 @@ export default function MarketingLanding() {
     setInstallPrompt(null);
   };
 
+  // Signed-in members shouldn't land on the marketing page — send them into the
+  // app (inspectors to their streets, admins to the dashboard).
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || viewer === undefined) return;
+    if (viewer?.role === "inspector") navigate("/inspector/streets", { replace: true });
+    else if (viewer?.role === "admin") navigate("/admin/dashboard", { replace: true });
+  }, [isLoaded, isSignedIn, viewer, navigate]);
+
   return (
     <div className="min-h-screen gradient-hero flex flex-col">
       {!(isLoaded && isSignedIn) && (
-        <div className="absolute top-4 right-4 z-[60] flex flex-wrap items-center justify-end gap-2 sm:top-6 sm:right-6">
+        <div
+          className="absolute right-4 z-[60] flex flex-wrap items-center justify-end gap-2 sm:right-6"
+          style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
+        >
           {installPrompt && !isStandalone && (
             <button
               type="button"
@@ -90,7 +101,10 @@ export default function MarketingLanding() {
       )}
 
       {isLoaded && isSignedIn && (
-        <div className="sticky top-0 z-50 border-b border-white/15 bg-slate-900/80 px-4 py-2 backdrop-blur-md">
+        <div
+          className="sticky top-0 z-50 border-b border-white/15 bg-slate-900/80 px-4 pb-2 backdrop-blur-md"
+          style={{ paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)" }}
+        >
           <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2 text-sm text-white">
             <span className="font-medium text-white/90">You’re signed in.</span>
             <div className="flex flex-wrap gap-2">

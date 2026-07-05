@@ -602,7 +602,7 @@ export default function PropertyCapture() {
   return (
     <div className="min-h-screen bg-[#f8f7ff] pb-24 flex flex-col">
       <div className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 shadow-md">
-        <div className="px-4 pt-8 pb-4">
+        <div className="px-4 pb-4" style={{ paddingTop: "calc(env(safe-area-inset-top) + 2rem)" }}>
           <div className="relative" ref={statusMenuRef}>
             <div className="flex items-center gap-2 pb-1">
               <button

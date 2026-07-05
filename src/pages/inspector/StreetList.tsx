@@ -23,7 +23,10 @@ export default function StreetList() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f8f7ff]">
-      <div className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 px-4 pt-10 pb-6 shadow-md">
+      <div
+        className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 px-4 pb-6 shadow-md"
+        style={{ paddingTop: "calc(env(safe-area-inset-top) + 2.5rem)" }}
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 pr-1">
             <p className="text-sky-100 text-sm font-medium uppercase tracking-widest">Inspector Mode</p>
