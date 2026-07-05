@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
+import { useCachedQuery } from "@/offline/hooks";
 
 const STATUS_DOT: Record<string, string> = {
   notStarted: "bg-gray-400",
@@ -15,7 +16,9 @@ export default function PropertyList() {
   const { streetId } = useParams<{ streetId: string }>();
   const sid = streetId as Id<"streets">;
 
-  const data = useQuery(api.streets.getWithProperties, { streetId: sid });
+  const liveData = useQuery(api.streets.getWithProperties, { streetId: sid });
+  // Offline-first: cache each street's property list so a walk survives dead zones.
+  const { data } = useCachedQuery(`inspector.street.${sid}`, liveData);
 
   const handleStartWalk = () => {
     const first = data?.properties.find((p) => p.status === "notStarted");

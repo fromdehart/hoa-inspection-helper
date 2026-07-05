@@ -5,6 +5,7 @@ import { useClerk } from "@clerk/clerk-react";
 import { Menu } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { useCachedQuery } from "@/offline/hooks";
 
 export default function StreetList() {
   const navigate = useNavigate();
@@ -13,7 +14,9 @@ export default function StreetList() {
   const canAdmin = viewer?.role === "admin";
   const [inspectorMenuOpen, setInspectorMenuOpen] = useState(false);
 
-  const streets = useQuery(api.streets.list);
+  const liveStreets = useQuery(api.streets.list);
+  // Offline-first: browse cached streets with no signal; refresh from Convex when online.
+  const { data: streets } = useCachedQuery("inspector.streets.list", liveStreets);
 
   const allDone =
     streets && streets.length > 0 && streets.every((s) => s.complete === s.total && s.total > 0);

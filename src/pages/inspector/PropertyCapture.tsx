@@ -4,9 +4,11 @@ import { useQuery, useMutation, useAction } from "convex/react";
 import { ChevronDown, Loader2, Trash2, ArrowRightLeft } from "lucide-react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
-import { buildInspectorThumbnailJpeg } from "@/lib/thumbnailImage";
-import { uploadPhoto } from "@/lib/uploadClient";
-import { runPool } from "@/lib/runPool";
+import { enqueuePhoto, enqueueNote } from "@/offline/outbox";
+import { syncNow } from "@/offline/syncManager";
+import { useCachedQuery } from "@/offline/hooks";
+import { isOnline } from "@/native/network";
+import { hasNativeCamera, takePhoto, pickPhotos } from "@/native/camera";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -112,12 +114,19 @@ export default function PropertyCapture() {
   const noteHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
   const aiBulletsHydratedForPropertyIdRef = useRef<Id<"properties"> | null>(null);
 
-  const property = useQuery(api.properties.get, { id: pid });
+  const liveProperty = useQuery(api.properties.get, { id: pid });
+  const { data: property } = useCachedQuery(`inspector.property.${pid}`, liveProperty);
   const viewer = useQuery(api.tenancy.viewerContext, {});
-  const photos = useQuery(api.photos.listByProperty, { propertyId: pid });
-  const streetData = useQuery(
+  const livePhotos = useQuery(api.photos.listByProperty, { propertyId: pid });
+  const { data: photos } = useCachedQuery(`inspector.photos.${pid}`, livePhotos);
+  const liveStreetData = useQuery(
     api.streets.getWithProperties,
     property?.streetId ? { streetId: property.streetId } : "skip",
+  );
+  // Reuse the same cache key PropertyList writes, so the walk list is warm offline.
+  const { data: streetData } = useCachedQuery(
+    `inspector.street.${property?.streetId ?? "none"}`,
+    liveStreetData,
   );
 
   const clerkIdsForDisplayNames = useMemo(() => {
@@ -135,8 +144,6 @@ export default function PropertyCapture() {
     clerkIdsForDisplayNames.length > 0 ? { clerkUserIds: clerkIdsForDisplayNames } : "skip",
   );
 
-  const createPhoto = useMutation(api.photos.create);
-  const setFullImage = useMutation(api.photos.setFullImage);
   const removePhotoForInspector = useAction(api.photos.removeForInspector);
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
   const setInspectionVerification = useMutation(api.properties.setInspectionVerification);
@@ -171,8 +178,8 @@ export default function PropertyCapture() {
         (property.inspectorNotesBack?.length ?? 0) >
       0;
     let initialFront = property.inspectorNotesFront ?? "";
-    let initialSide = property.inspectorNotesSide ?? "";
-    let initialBack = property.inspectorNotesBack ?? "";
+    const initialSide = property.inspectorNotesSide ?? "";
+    const initialBack = property.inspectorNotesBack ?? "";
     if (!anySection && property.inspectorNotes?.trim()) {
       initialFront = property.inspectorNotes;
     }
@@ -233,12 +240,22 @@ export default function PropertyCapture() {
     noteAutosaveTimerRef.current = setTimeout(async () => {
       try {
         setNoteSaveState("saving");
-        await updateInspectorNotes({
-          id: pid,
-          inspectorNotesFront: noteFront,
-          inspectorNotesSide: noteSide,
-          inspectorNotesBack: noteBack,
-        });
+        if (isOnline()) {
+          await updateInspectorNotes({
+            id: pid,
+            inspectorNotesFront: noteFront,
+            inspectorNotesSide: noteSide,
+            inspectorNotesBack: noteBack,
+          });
+        } else {
+          // Offline: queue the draft; the sync manager flushes it on reconnect.
+          await enqueueNote({
+            propertyId: pid,
+            front: noteFront,
+            side: noteSide,
+            back: noteBack,
+          });
+        }
         lastPersistedNotesRef.current = { front: noteFront, side: noteSide, back: noteBack };
         setLastSavedAt(Date.now());
         setNoteSaveState("saved");
@@ -285,18 +302,18 @@ export default function PropertyCapture() {
   const currentIdx = walkList.findIndex((p) => p._id === pid);
   const nextProperty = currentIdx >= 0 ? walkList[currentIdx + 1] : undefined;
 
-  const handlePhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  /**
+   * Persist captured photos to the local outbox (fast, offline-safe). The sync
+   * manager uploads (thumbnail-first + full, concurrency-limited) and registers
+   * them in Convex in the background with retry — so capture never blocks on
+   * connectivity and nothing is silently lost.
+   */
+  const enqueueFiles = async (files: File[]) => {
     if (files.length === 0 || !propertyId) return;
 
     const slotIds = files.map(() => crypto.randomUUID());
-    const batchTotal = files.length;
-    let batchDone = 0;
-    let batchFail = 0;
-
     activeUploadBatchesRef.current++;
-    uploadStatsRef.current.started += batchTotal;
+    uploadStatsRef.current.started += files.length;
     setUploadProgress({
       done: uploadStatsRef.current.done,
       fail: uploadStatsRef.current.fail,
@@ -304,79 +321,58 @@ export default function PropertyCapture() {
     });
     setPendingSlotIds((prev) => [...prev, ...slotIds]);
 
-    void (async () => {
-      try {
-        await runPool(files, UPLOAD_CONCURRENCY, async (file, index) => {
-          const slotId = slotIds[index];
+    try {
+      await Promise.all(
+        files.map(async (file, i) => {
           try {
-            let photoId: Id<"photos">;
-            let queuedFullUpload = false;
-            try {
-              const thumbFile = await buildInspectorThumbnailJpeg(file);
-              const thumbResult = await uploadPhoto(thumbFile, propertyId, UPLOAD_SECTION);
-              photoId = await createPhoto({
-                propertyId: pid,
-                section: UPLOAD_SECTION,
-                thumbnailFilePath: thumbResult.filePath,
-                thumbnailPublicUrl: thumbResult.publicUrl,
-              });
-              queuedFullUpload = true;
-            } catch (thumbErr) {
-              console.warn("Thumbnail path failed, uploading full image only:", thumbErr);
-              const fullOnly = await uploadPhoto(file, propertyId, UPLOAD_SECTION);
-              photoId = await createPhoto({
-                propertyId: pid,
-                section: UPLOAD_SECTION,
-                filePath: fullOnly.filePath,
-                publicUrl: fullOnly.publicUrl,
-              });
-            }
-
+            await enqueuePhoto({ propertyId: pid, section: UPLOAD_SECTION, file });
             uploadStatsRef.current.done++;
-            batchDone++;
-
-            if (queuedFullUpload) {
-              void (async () => {
-                try {
-                  const fullResult = await uploadPhoto(file, propertyId, UPLOAD_SECTION);
-                  await setFullImage({
-                    id: photoId,
-                    propertyId: pid,
-                    filePath: fullResult.filePath,
-                    publicUrl: fullResult.publicUrl,
-                  });
-                } catch (fullErr) {
-                  console.error("Full-size background upload failed:", fullErr);
-                }
-              })();
-            }
           } catch (err) {
             uploadStatsRef.current.fail++;
-            batchFail++;
-            console.error("Photo upload failed:", err);
+            console.error("Failed to queue photo:", err);
           } finally {
-            setPendingSlotIds((prev) => prev.filter((id) => id !== slotId));
+            setPendingSlotIds((prev) => prev.filter((id) => id !== slotIds[i]));
             setUploadProgress({
               done: uploadStatsRef.current.done,
               fail: uploadStatsRef.current.fail,
               total: uploadStatsRef.current.started,
             });
           }
-        });
-
-        if (batchFail > 0) {
-          alert(
-            `Finished ${batchTotal} uploads: ${batchDone} saved, ${batchFail} failed — please retry the failed ones.`,
-          );
-        }
-      } finally {
-        activeUploadBatchesRef.current--;
-        if (activeUploadBatchesRef.current === 0) {
-          setUploadProgress(null);
-          uploadStatsRef.current = { started: 0, done: 0, fail: 0 };
-        }
+        }),
+      );
+      // Attempt an immediate flush; if offline it no-ops and syncs on reconnect.
+      void syncNow();
+    } finally {
+      activeUploadBatchesRef.current--;
+      if (activeUploadBatchesRef.current === 0) {
+        setUploadProgress(null);
+        uploadStatsRef.current = { started: 0, done: 0, fail: 0 };
       }
-    })();
+    }
+  };
+
+  const handlePhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    void enqueueFiles(files);
+  };
+
+  const handleNativeCamera = async () => {
+    try {
+      const file = await takePhoto();
+      await enqueueFiles([file]);
+    } catch (err) {
+      console.error("Camera capture failed:", err);
+    }
+  };
+
+  const handleNativeGallery = async () => {
+    try {
+      const files = await pickPhotos();
+      await enqueueFiles(files);
+    } catch (err) {
+      console.error("Gallery pick failed:", err);
+    }
   };
 
   const openViewerAt = (index: number) => {
@@ -645,7 +641,7 @@ export default function PropertyCapture() {
             pendingSlotIds.length > 0 ? "ring-2 ring-sky-200 ring-offset-1" : ""
           }`}
           disabled={!propertyId}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => (hasNativeCamera() ? void handleNativeCamera() : fileInputRef.current?.click())}
         >
           <span className="flex flex-col items-center justify-center gap-1">
             <span>📸 Take Photo</span>
@@ -663,6 +659,17 @@ export default function PropertyCapture() {
             ) : null}
           </span>
         </button>
+
+        {hasNativeCamera() && (
+          <button
+            type="button"
+            className="w-full -mt-1 text-sm font-medium text-sky-600/80 hover:text-sky-700"
+            disabled={!propertyId}
+            onClick={() => void handleNativeGallery()}
+          >
+            or choose from gallery
+          </button>
+        )}
 
         {(propertyPhotos.length > 0 || pendingSlotIds.length > 0) && (
           <div className="flex gap-2 overflow-x-auto pb-1">

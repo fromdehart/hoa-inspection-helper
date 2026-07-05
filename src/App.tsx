@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import RoleGuard from "./components/RoleGuard";
+import SyncStatusBanner from "./components/SyncStatusBanner";
+import { startSyncManager } from "./offline/syncManager";
 import Landing from "./pages/Landing";
 import AdminGate from "./pages/admin/AdminGate";
 import Dashboard from "./pages/admin/Dashboard";
@@ -30,9 +33,15 @@ import ArcRequest from "./pages/home/ArcRequest";
 import NotFound from "./pages/NotFound";
 
 const App = () => {
+  useEffect(() => {
+    // Start the offline sync engine (network listeners + periodic outbox drain).
+    startSyncManager();
+  }, []);
+
   return (
     <BrowserRouter>
       <MembershipDisplayNameSync />
+      <SyncStatusBanner />
       <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/login" element={<RoleSignInLanding />} />
