@@ -6,6 +6,7 @@ import {
   clearSignInReturnPath,
   resolvePostSignInRedirect,
 } from "@/lib/postSignInRedirect";
+import { isNative } from "@/native/platform";
 
 export default function SignInPage() {
   const location = useLocation();
@@ -14,8 +15,13 @@ export default function SignInPage() {
   // Re-resolve each render: Clerk MFA moves between /sign-in/* URLs and drops router state;
   // sessionStorage keeps the path from the Admin / Inspector button the user chose.
   const afterSignInPath = resolvePostSignInRedirect(location.state);
-  const afterSignInAbsolute =
-    typeof window !== "undefined" ? `${window.location.origin}${afterSignInPath}` : afterSignInPath;
+  // On native the origin is capacitor://localhost / https://localhost, which Clerk
+  // won't accept as an absolute redirect — use the relative path there.
+  const afterSignInAbsolute = isNative()
+    ? afterSignInPath
+    : typeof window !== "undefined"
+      ? `${window.location.origin}${afterSignInPath}`
+      : afterSignInPath;
   // Homeowners self-serve (create their own account); admins/inspectors are provisioned.
   const isHomeownerFlow =
     afterSignInPath.startsWith("/home") || afterSignInPath.startsWith("/portal");

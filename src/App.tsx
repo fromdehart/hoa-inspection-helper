@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import RoleGuard from "./components/RoleGuard";
 import SyncStatusBanner from "./components/SyncStatusBanner";
 import { startSyncManager } from "./offline/syncManager";
+import { initNativeShell } from "./native/bootstrap";
 import Landing from "./pages/Landing";
 import AdminGate from "./pages/admin/AdminGate";
 import Dashboard from "./pages/admin/Dashboard";
@@ -34,6 +35,8 @@ import NotFound from "./pages/NotFound";
 
 const App = () => {
   useEffect(() => {
+    // Native shell chrome + deep-link routing (no-op on web).
+    initNativeShell();
     // Start the offline sync engine (network listeners + periodic outbox drain).
     startSyncManager();
   }, []);

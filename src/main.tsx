@@ -1,6 +1,12 @@
 import { createRoot } from "react-dom/client";
 import { ClerkProvider, useAuth } from "@clerk/clerk-react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
+// Self-hosted "Plus Jakarta Sans" (offline-safe; preserves the family name).
+import "@fontsource/plus-jakarta-sans/400.css";
+import "@fontsource/plus-jakarta-sans/500.css";
+import "@fontsource/plus-jakarta-sans/600.css";
+import "@fontsource/plus-jakarta-sans/700.css";
+import "@fontsource/plus-jakarta-sans/800.css";
 import App from "./App.tsx";
 import "./index.css";
 import { convex } from "@/lib/convexClient";

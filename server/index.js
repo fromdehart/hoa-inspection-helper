@@ -35,8 +35,30 @@ const ALLOWED_MIME = new Set([
 // Ensure uploads dir exists (startup only — fine to be sync).
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
+// Native app origins (Capacitor). iOS uses capacitor://localhost; Android uses
+// https://localhost (androidScheme: "https"). Always allowed so the mobile app
+// can upload; web origins come from ALLOWED_ORIGIN.
+const NATIVE_ORIGINS = ["capacitor://localhost", "http://localhost", "https://localhost"];
+
+function buildCorsOrigin() {
+  const raw = process.env.ALLOWED_ORIGIN;
+  if (!raw || raw === "*") {
+    // Dev default: allow all. Set ALLOWED_ORIGIN in prod to lock web origins down.
+    return "*";
+  }
+  const allowed = new Set([
+    ...raw.split(",").map((s) => s.trim()).filter(Boolean),
+    ...NATIVE_ORIGINS,
+  ]);
+  return (origin, cb) => {
+    // Non-browser clients (no Origin header) and allowlisted origins pass.
+    if (!origin || allowed.has(origin)) return cb(null, true);
+    return cb(new Error(`Origin not allowed: ${origin}`));
+  };
+}
+
 const app = express();
-app.use(cors({ origin: process.env.ALLOWED_ORIGIN ?? "*" }));
+app.use(cors({ origin: buildCorsOrigin() }));
 app.use(express.json({ limit: "32kb" }));
 
 // Use flat temp destination; we'll move the file after we know propertyId/section.
