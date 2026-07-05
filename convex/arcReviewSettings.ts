@@ -1,5 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 import { requireViewerRole } from "./lib/tenantAuth";
 
 export type ArcReviewPosture = "strict" | "practical" | "homeownerFriendly";
@@ -8,32 +10,42 @@ const POSTURE_KEY = "arcReviewPosture";
 const GUIDANCE_KEY = "arcReviewAdminGuidance";
 const SHOW_ON_PROPERTY_KEY = "arcShowApplicationOnPropertyPage";
 
+async function readSettings(ctx: QueryCtx, hoaId: Id<"hoas">) {
+  const postureDoc = await ctx.db
+    .query("aiConfig")
+    .withIndex("by_hoa_key", (q) => q.eq("hoaId", hoaId).eq("key", POSTURE_KEY))
+    .first();
+  const guidanceDoc = await ctx.db
+    .query("aiConfig")
+    .withIndex("by_hoa_key", (q) => q.eq("hoaId", hoaId).eq("key", GUIDANCE_KEY))
+    .first();
+  const showOnPropertyDoc = await ctx.db
+    .query("aiConfig")
+    .withIndex("by_hoa_key", (q) => q.eq("hoaId", hoaId).eq("key", SHOW_ON_PROPERTY_KEY))
+    .first();
+  const postureRaw = postureDoc?.value ?? "";
+  const posture: ArcReviewPosture =
+    postureRaw === "strict" || postureRaw === "practical" || postureRaw === "homeownerFriendly"
+      ? postureRaw
+      : "homeownerFriendly";
+  return {
+    reviewPosture: posture,
+    adminGuidance: guidanceDoc?.value ?? "",
+    showArcApplicationOnPropertyPage: showOnPropertyDoc?.value === "true",
+  };
+}
+
+/** Internal: ARC review settings for an HOA (used by scheduled ARC review). */
+export const getByHoaInternal = internalQuery({
+  args: { hoaId: v.id("hoas") },
+  handler: async (ctx, args) => readSettings(ctx, args.hoaId),
+});
+
 export const get = query({
   args: {},
   handler: async (ctx) => {
     const viewer = await requireViewerRole(ctx, ["admin"]);
-    const postureDoc = await ctx.db
-      .query("aiConfig")
-      .withIndex("by_hoa_key", (q) => q.eq("hoaId", viewer.hoaId).eq("key", POSTURE_KEY))
-      .first();
-    const guidanceDoc = await ctx.db
-      .query("aiConfig")
-      .withIndex("by_hoa_key", (q) => q.eq("hoaId", viewer.hoaId).eq("key", GUIDANCE_KEY))
-      .first();
-    const showOnPropertyDoc = await ctx.db
-      .query("aiConfig")
-      .withIndex("by_hoa_key", (q) => q.eq("hoaId", viewer.hoaId).eq("key", SHOW_ON_PROPERTY_KEY))
-      .first();
-    const postureRaw = postureDoc?.value ?? "";
-    const posture: ArcReviewPosture =
-      postureRaw === "strict" || postureRaw === "practical" || postureRaw === "homeownerFriendly"
-        ? postureRaw
-        : "homeownerFriendly";
-    return {
-      reviewPosture: posture,
-      adminGuidance: guidanceDoc?.value ?? "",
-      showArcApplicationOnPropertyPage: showOnPropertyDoc?.value === "true",
-    };
+    return readSettings(ctx, viewer.hoaId);
   },
 });
 

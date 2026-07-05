@@ -1,8 +1,24 @@
 import { internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireViewerRole } from "./lib/tenantAuth";
+import { requireHomeownerForProperty } from "./lib/homeownerAuth";
+import type { Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
 
 const KEYS = ["violationRules", "approvedColors", "hoaGuidelines"] as const;
+
+async function readHoaConfig(ctx: QueryCtx, hoaId: Id<"hoas"> | undefined) {
+  const result = { violationRules: "", approvedColors: "", hoaGuidelines: "" };
+  if (!hoaId) return result;
+  for (const key of KEYS) {
+    const doc = await ctx.db
+      .query("aiConfig")
+      .withIndex("by_hoa_key", (q) => q.eq("hoaId", hoaId).eq("key", key))
+      .first();
+    if (doc) result[key] = doc.value;
+  }
+  return result;
+}
 
 export const getAll = query({
   args: {},
@@ -41,6 +57,16 @@ export const getAllInternal = internalQuery({
       if (doc) result[key] = doc.value;
     }
     return result;
+  },
+});
+
+/** Homeowner-facing HOA rules text (approved colors, guidelines) for a property they own. */
+export const getHomeownerRules = query({
+  args: { propertyId: v.id("properties") },
+  handler: async (ctx, args) => {
+    await requireHomeownerForProperty(ctx, args.propertyId);
+    const property = await ctx.db.get(args.propertyId);
+    return readHoaConfig(ctx, property?.hoaId);
   },
 });
 

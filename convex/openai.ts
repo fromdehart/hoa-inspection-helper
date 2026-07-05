@@ -1,12 +1,34 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 
 const getApiKey = () => process.env.OPENAI_API_KEY!;
 
 function isReasoningModel(model: string): boolean {
   return /^(o1|o3|o4)/.test(model);
+}
+
+const DEFAULT_MODEL = "gpt-4o";
+
+/**
+ * Allowlist of models callers may request. Prevents a caller from selecting an
+ * arbitrary/expensive model. Unknown models fall back to DEFAULT_MODEL.
+ */
+const ALLOWED_MODELS = new Set([
+  "gpt-4o",
+  "gpt-4o-mini",
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "o1",
+  "o3",
+  "o3-mini",
+  "o4-mini",
+]);
+
+function resolveModel(requested: string | undefined): string {
+  if (requested && ALLOWED_MODELS.has(requested)) return requested;
+  return DEFAULT_MODEL;
 }
 
 /**
@@ -28,7 +50,12 @@ function extractText(response: {
   }
 }
 
-export const generateText = action({
+/**
+ * INTERNAL ONLY. Not callable from the client — reach it through an authenticated
+ * wrapper (inspectionBullets, arcApplicationReview, chat) so we never expose an
+ * unauthenticated, cost-bearing OpenAI call. Model is allowlisted via resolveModel.
+ */
+export const generateText = internalAction({
   args: {
     prompt: v.string(),
     systemPrompt: v.optional(v.string()),
@@ -44,7 +71,7 @@ export const generateText = action({
     if (!apiKey) {
       return { text: "", responseId: "" };
     }
-    const model = args.model ?? "gpt-4o";
+    const model = resolveModel(args.model);
     const isReasoning = isReasoningModel(model);
 
     const input: Array<Record<string, unknown>> = [];
@@ -114,8 +141,8 @@ export const generateText = action({
   },
 });
 
-/** Optional Whisper transcription (inspector mic); requires OPENAI_API_KEY on Convex. */
-export const transcribeAudio = action({
+/** Optional Whisper transcription (inspector mic); requires OPENAI_API_KEY on Convex. Internal only. */
+export const transcribeAudio = internalAction({
   args: {
     audioBase64: v.string(),
     mimeType: v.string(),

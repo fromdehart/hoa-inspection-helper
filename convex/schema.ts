@@ -25,6 +25,27 @@ export default defineSchema({
     .index("by_hoa", ["hoaId"])
     .index("by_hoa_role", ["hoaId", "role"]),
 
+  /**
+   * Homeowner accounts, scoped to a single property (a person may own several →
+   * one row per property). Kept separate from userHoaMemberships, which is
+   * HOA-scoped and assumes one membership per user. Bootstrapped via the
+   * property's accessToken + a Clerk email that matches properties.email.
+   */
+  propertyMemberships: defineTable({
+    clerkUserId: v.string(),
+    propertyId: v.id("properties"),
+    hoaId: v.optional(v.id("hoas")),
+    email: v.optional(v.string()),
+    fullName: v.optional(v.string()),
+    /** True when the account was created by claiming the emailed portal token. */
+    claimedViaToken: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clerk_user", ["clerkUserId"])
+    .index("by_property", ["propertyId"])
+    .index("by_clerk_and_property", ["clerkUserId", "propertyId"]),
+
   platformAdmins: defineTable({
     clerkUserId: v.string(),
     email: v.optional(v.string()),
@@ -173,6 +194,10 @@ export default defineSchema({
     sourcePublicUrl: v.string(),
     sourceFilePath: v.string(),
     parsedText: v.string(),
+    /** Grouping for the homeowner rules library (e.g. paintColors, architectural, landscaping, general). */
+    category: v.optional(v.string()),
+    /** When true, shown in the homeowner rules library. Undefined is treated as visible. */
+    visibleToHomeowners: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -199,6 +224,14 @@ export default defineSchema({
         sourceFilePath: v.string(),
         parsedText: v.string(),
       }),
+    ),
+    /** True when the homeowner submitted this themselves (vs. admin-uploaded). */
+    submittedByHomeowner: v.optional(v.boolean()),
+    /** Homeowner-authored request details (homeowner path). */
+    projectType: v.optional(v.string()),
+    projectDescription: v.optional(v.string()),
+    homeownerPhotos: v.optional(
+      v.array(v.object({ publicUrl: v.string(), filePath: v.string() })),
     ),
     verdict: v.optional(
       v.union(
@@ -257,4 +290,33 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_hoa_status", ["hoaId", "status"])
     .index("by_hoa", ["hoaId"]),
+
+  /** One AI-chat thread per homeowner+property (grounded in the HOA rules docs). */
+  chatConversations: defineTable({
+    clerkUserId: v.string(),
+    propertyId: v.id("properties"),
+    hoaId: v.optional(v.id("hoas")),
+    /** OpenAI Responses API id for multi-turn continuity. */
+    openaiResponseId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clerk_property", ["clerkUserId", "propertyId"])
+    .index("by_property", ["propertyId"]),
+
+  chatMessages: defineTable({
+    conversationId: v.id("chatConversations"),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    text: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId"]),
+
+  /** Sliding-window rate limit for homeowner AI calls (chat + ARC review). */
+  homeownerAiUsage: defineTable({
+    clerkUserId: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+  })
+    .index("by_clerk_user", ["clerkUserId"]),
 });

@@ -1,6 +1,6 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
 import { v } from "convex/values";
 
 const getConfig = () => ({
@@ -10,7 +10,12 @@ const getConfig = () => ({
 
 const VOTE_MILESTONE_TO = "mdehart1@gmail.com";
 
-export const sendEmail = action({
+/**
+ * INTERNAL ONLY. Recipient/subject/body are trusted server callers (letters.send,
+ * homeowner notifications). Never expose to the client — it would be an open relay
+ * from our verified sending domain.
+ */
+export const sendEmail = internalAction({
   args: {
     to: v.string(),
     subject: v.string(),

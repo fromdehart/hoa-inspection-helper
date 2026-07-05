@@ -43,6 +43,7 @@ export default function Settings() {
   const arcRefDocs = useQuery(api.arcReferenceDocs.list, {});
   const createArcRef = useMutation(api.arcReferenceDocs.create);
   const removeArcRef = useMutation(api.arcReferenceDocs.remove);
+  const updateArcRef = useMutation(api.arcReferenceDocs.update);
   const parseDocxBase64 = useAction(api.arcDocIngest.parseDocxBase64);
   const arcReviewSettings = useQuery(api.arcReviewSettings.get, {});
   const setArcReviewSettings = useMutation(api.arcReviewSettings.set);
@@ -441,9 +442,32 @@ export default function Settings() {
                       Open file
                     </a>
                   </div>
-                  <Button type="button" size="sm" variant="outline" onClick={() => removeArcRef({ id: d._id })}>
-                    Remove
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      aria-label="Category"
+                      className="rounded border px-2 py-1 text-xs"
+                      value={d.category ?? "general"}
+                      onChange={(e) => updateArcRef({ id: d._id, category: e.target.value })}
+                    >
+                      <option value="general">General</option>
+                      <option value="paintColors">Paint colors</option>
+                      <option value="architectural">Architectural</option>
+                      <option value="landscaping">Landscaping</option>
+                    </select>
+                    <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={d.visibleToHomeowners !== false}
+                        onChange={(e) =>
+                          updateArcRef({ id: d._id, visibleToHomeowners: e.target.checked })
+                        }
+                      />
+                      Show to homeowners
+                    </label>
+                    <Button type="button" size="sm" variant="outline" onClick={() => removeArcRef({ id: d._id })}>
+                      Remove
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>

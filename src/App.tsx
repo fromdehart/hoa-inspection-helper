@@ -17,6 +17,17 @@ import PlatformGate from "./pages/platform/PlatformGate";
 import PlatformHoaList from "./pages/platform/PlatformHoaList";
 import PlatformHoaDetail from "./pages/platform/PlatformHoaDetail";
 import { MembershipDisplayNameSync } from "./components/MembershipDisplayNameSync";
+import HomeownerGuard from "./components/HomeownerGuard";
+import ClaimProperty from "./pages/portal/ClaimProperty";
+import HomeownerPortal from "./pages/portal/HomeownerPortal";
+import HomeLayout from "./pages/home/HomeLayout";
+import HomeDashboard from "./pages/home/HomeDashboard";
+import InspectionFindings from "./pages/home/InspectionFindings";
+import FixPhotos from "./pages/home/FixPhotos";
+import RulesLibrary from "./pages/home/RulesLibrary";
+import Chat from "./pages/home/Chat";
+import ArcRequest from "./pages/home/ArcRequest";
+import NotFound from "./pages/NotFound";
 
 const App = () => {
   return (
@@ -71,6 +82,25 @@ const App = () => {
               </RoleGuard>
             }
           />
+          {/* Homeowner portal: emailed token link → claim → authenticated /home */}
+          <Route path="/portal/:token" element={<ClaimProperty />} />
+          <Route path="/portal/:token/guest" element={<HomeownerPortal />} />
+          <Route
+            path="/home"
+            element={
+              <HomeownerGuard>
+                <HomeLayout />
+              </HomeownerGuard>
+            }
+          >
+            <Route index element={<HomeDashboard />} />
+            <Route path="inspection" element={<InspectionFindings />} />
+            <Route path="fix-photos" element={<FixPhotos />} />
+            <Route path="rules" element={<RulesLibrary />} />
+            <Route path="chat" element={<Chat />} />
+            <Route path="request" element={<ArcRequest />} />
+          </Route>
+
           <Route path="/inspector" element={<InspectorGate />} />
           <Route
             path="/inspector/streets"
@@ -96,6 +126,7 @@ const App = () => {
               </RoleGuard>
             }
           />
+          <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );

@@ -87,7 +87,7 @@ export const send = action({
     if (!property.generatedLetterHtml?.trim()) {
       return { success: false, error: "No generated letter found. Generate the letter first." };
     }
-    const result = await ctx.runAction(api.resend.sendEmail, {
+    const result = await ctx.runAction(internal.resend.sendEmail, {
       to: property.email,
       subject: `HOA Inspection Notice — ${property.address}`,
       html: property.generatedLetterHtml,

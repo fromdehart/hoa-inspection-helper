@@ -47,7 +47,7 @@ ${raw}
 
 Produce the bullet list now.`;
 
-    const { text } = await ctx.runAction(api.openai.generateText, {
+    const { text } = await ctx.runAction(internal.openai.generateText, {
       systemPrompt: SYSTEM_PROMPT,
       prompt,
       model: "gpt-4o-mini",

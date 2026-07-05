@@ -1,17 +1,28 @@
 const BASE = import.meta.env.VITE_UPLOAD_SERVER_URL ?? "http://localhost:3001";
+const UPLOAD_TOKEN = import.meta.env.VITE_UPLOAD_TOKEN as string | undefined;
 
 async function uploadToSection(propertyId: string, section: string, file: File) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("propertyId", propertyId);
   fd.append("section", section);
+  const headers: Record<string, string> = {};
+  if (UPLOAD_TOKEN) headers["X-Upload-Token"] = UPLOAD_TOKEN;
   let res: Response;
   try {
-    res = await fetch(`${BASE}/api/upload`, { method: "POST", body: fd });
+    res = await fetch(`${BASE}/api/upload`, { method: "POST", body: fd, headers });
   } catch {
     throw new Error(`Upload server not reachable at ${BASE}. Start it with: npm run dev:upload`);
   }
-  if (!res.ok) throw new Error("Upload failed: " + res.status);
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = ((await res.json()) as { error?: string }).error ?? "";
+    } catch {
+      /* ignore non-JSON error bodies */
+    }
+    throw new Error(detail ? `Upload failed: ${detail}` : `Upload failed: ${res.status}`);
+  }
   return res.json() as Promise<{ publicUrl: string; filePath: string }>;
 }
 

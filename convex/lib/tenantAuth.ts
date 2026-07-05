@@ -3,24 +3,26 @@ import { getActingHoaId, isPlatformAdmin } from "./platformAuth";
 
 type MembershipRole = "admin" | "inspector";
 
-type QueryBuilder<T> = {
+type QueryBuilder = {
   withIndex: (indexName: string, fn: (q: { eq: (field: string, value: unknown) => unknown }) => unknown) => {
-    first: () => Promise<T | null>;
+    first: () => Promise<unknown>;
   };
 };
 
 type CtxWithDbAndAuth = {
   db: {
-    query: (table: string) => QueryBuilder<{
-      _id: Id<"userHoaMemberships">;
-      hoaId: Id<"hoas">;
-      role: MembershipRole;
-    }>;
+    query: (table: string) => QueryBuilder;
     get: (id: Id<"hoas">) => Promise<{ _id: Id<"hoas">; status: "active" | "inactive" } | null>;
   };
   auth: {
     getUserIdentity: () => Promise<{ subject: string } | null>;
   };
+};
+
+type MembershipRow = {
+  _id: Id<"userHoaMemberships">;
+  hoaId: Id<"hoas">;
+  role: MembershipRole;
 };
 
 export type ViewerContext = {
@@ -51,10 +53,10 @@ export async function tryGetViewerContext(ctx: CtxWithDbAndAuth): Promise<Viewer
     };
   }
 
-  const membership = await ctx.db
+  const membership = (await ctx.db
     .query("userHoaMemberships")
     .withIndex("by_clerk_user", (q) => q.eq("clerkUserId", identity.subject))
-    .first();
+    .first()) as MembershipRow | null;
   if (!membership) {
     if (platformAdmin) {
       return null;

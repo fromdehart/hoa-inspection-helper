@@ -7,6 +7,7 @@ import {
   DEFAULT_LETTER_TEMPLATE,
 } from "./letterBody";
 import { requireViewerRole } from "./lib/tenantAuth";
+import { requireHomeownerForProperty } from "./lib/homeownerAuth";
 import {
   buildCombinedInspectorNotes,
   buildInspectorNotesPatch,
@@ -50,6 +51,33 @@ export const get = query({
     const property = await ctx.db.get(args.id);
     if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) return null;
     return property;
+  },
+});
+
+/**
+ * Homeowner-facing view of their property. Deliberately returns ONLY
+ * homeowner-safe fields (address/status + the friendly AI violation bullets +
+ * the sent letter), never raw inspector notes or internal metadata. Gated by
+ * property-scoped homeowner ownership.
+ */
+export const getHomeownerView = query({
+  args: { propertyId: v.id("properties") },
+  handler: async (ctx, args) => {
+    await requireHomeownerForProperty(ctx, args.propertyId);
+    const doc = await ctx.db.get(args.propertyId);
+    if (!doc) return null;
+    return {
+      _id: doc._id,
+      address: doc.address,
+      homeownerNames: doc.homeownerNames ?? "",
+      status: doc.status,
+      letterSentAt: doc.letterSentAt ?? null,
+      /** Cleaned, homeowner-friendly list of items to address (markdown bullets). */
+      violationBullets: doc.aiLetterBullets ?? "",
+      /** The letter the HOA sent, if any (already homeowner-facing content). */
+      generatedLetterHtml: doc.generatedLetterHtml ?? "",
+      generatedLetterAt: doc.generatedLetterAt ?? null,
+    };
   },
 });
 

@@ -1,4 +1,6 @@
-import { action } from "./_generated/server";
+import { action, internalAction } from "./_generated/server";
+import type { ActionCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import {
@@ -62,54 +64,72 @@ function buildCorpus(
   return { text: out.join("\n\n---\n\n"), truncated };
 }
 
-export const runReview = action({
-  args: { submissionId: v.id("arcApplicationSubmissions") },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{ ok: true } | { ok: false; error: string }> => {
-    const viewer = await ctx.runQuery(api.tenancy.viewerContext, {});
-    if (!viewer || viewer.role !== "admin") {
-      return { ok: false, error: "Admin access required." };
-    }
+/**
+ * Core ARC review, shared by the admin action and the homeowner-triggered
+ * internal action. Uses internal queries so it works without an admin identity
+ * (ownership/authorization is enforced by the callers). Handles both admin
+ * file-only submissions and homeowner submissions (project description + photos).
+ */
+async function executeReview(
+  ctx: ActionCtx,
+  submissionId: Id<"arcApplicationSubmissions">,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const submission = await ctx.runQuery(internal.arcApplications.getInternal, {
+    id: submissionId,
+  });
+  if (!submission) return { ok: false, error: "Submission not found." };
 
-    const submission = await ctx.runQuery(api.arcApplications.get, { id: args.submissionId });
-    if (!submission) {
-      return { ok: false, error: "Submission not found." };
-    }
+  const property = await ctx.runQuery(internal.properties.getInternal, {
+    id: submission.propertyId,
+  });
+  if (!property?.hoaId) return { ok: false, error: "Property not found." };
 
-    const property = await ctx.runQuery(api.properties.get, { id: submission.propertyId });
-    if (!property) {
-      return { ok: false, error: "Property not found." };
-    }
+  const appParts: { title: string; body: string }[] = [];
+  if (submission.projectType?.trim()) {
+    appParts.push({ title: "Project type", body: submission.projectType });
+  }
+  if (submission.projectDescription?.trim()) {
+    appParts.push({ title: "Project description", body: submission.projectDescription });
+  }
+  for (const f of submission.files) {
+    appParts.push({ title: `Application file: ${f.fileName}`, body: f.parsedText });
+  }
+  if (submission.homeownerPhotos && submission.homeownerPhotos.length > 0) {
+    appParts.push({
+      title: "Attached photos",
+      body: `${submission.homeownerPhotos.length} photo(s) attached by the homeowner (images not analyzed here).`,
+    });
+  }
+  const hasContent = appParts.some((p) => p.body.trim().length > 0);
+  if (!hasContent) {
+    return {
+      ok: false,
+      error: "No description or extracted text in this submission. Add a project description or text-based files.",
+    };
+  }
 
-    const combinedAppText = submission.files.map((f) => f.parsedText).join("\n\n").trim();
-    if (!combinedAppText) {
-      return { ok: false, error: "No extracted text in this submission. Re-upload PDFs as text-based files or DOCX." };
-    }
+  const refDocs = await ctx.runQuery(internal.arcReferenceDocs.listByHoaInternal, {
+    hoaId: property.hoaId,
+  });
+  const refParts = (refDocs ?? []).map((d) => ({
+    title: `Reference: ${d.title}`,
+    body: d.parsedText,
+  }));
+  const refCorpus =
+    refParts.length > 0
+      ? buildCorpus(refParts, MAX_REF_CHARS)
+      : {
+          text: "### Reference library\n\n(No ARC reference documents uploaded for this HOA yet. Base your verdict mainly on completeness of the application.)",
+          truncated: false,
+        };
 
-    const refDocs = await ctx.runQuery(api.arcReferenceDocs.list, {});
-    const refParts = (refDocs ?? []).map((d) => ({
-      title: `Reference: ${d.title}`,
-      body: d.parsedText,
-    }));
-    const refCorpus =
-      refParts.length > 0
-        ? buildCorpus(refParts, MAX_REF_CHARS)
-        : {
-            text: "### Reference library\n\n(No ARC reference documents uploaded for this HOA yet. Base your verdict mainly on completeness of the application.)",
-            truncated: false,
-          };
+  const appCorpus = buildCorpus(appParts, MAX_APP_CHARS);
+  const reviewSettings = await ctx.runQuery(internal.arcReviewSettings.getByHoaInternal, {
+    hoaId: property.hoaId,
+  });
 
-    const appParts = submission.files.map((f) => ({
-      title: `Application file: ${f.fileName}`,
-      body: f.parsedText,
-    }));
-    const appCorpus = buildCorpus(appParts, MAX_APP_CHARS);
-    const reviewSettings = await ctx.runQuery(api.arcReviewSettings.get, {});
-
-    const promptHadTruncation = refCorpus.truncated || appCorpus.truncated;
-    const userMessage = `Property address: ${property.address}
+  const promptHadTruncation = refCorpus.truncated || appCorpus.truncated;
+  const userMessage = `Property address: ${property.address}
 
 ## HOA review posture (admin-configured)
 Review posture: ${reviewSettings.reviewPosture}
@@ -129,40 +149,58 @@ ${appCorpus.text}
 
 Return the JSON object now.`;
 
-    await ctx.runMutation(internal.arcApplications.internalSetReviewing, {
-      submissionId: args.submissionId,
-    });
+  await ctx.runMutation(internal.arcApplications.internalSetReviewing, { submissionId });
 
-    const { text: rawText } = await ctx.runAction(api.openai.generateText, {
-      systemPrompt: SYSTEM_PROMPT,
-      prompt: userMessage,
-      model: AI_MODEL,
-      textFormatJsonObject: true,
-    });
+  const { text: rawText } = await ctx.runAction(internal.openai.generateText, {
+    systemPrompt: SYSTEM_PROMPT,
+    prompt: userMessage,
+    model: AI_MODEL,
+    textFormatJsonObject: true,
+  });
 
-    if (!rawText?.trim()) {
-      await ctx.runMutation(internal.arcApplications.internalFailReview, {
-        submissionId: args.submissionId,
-        aiError:
-          "The AI returned no text. Check OPENAI_API_KEY on your Convex deployment and try again.",
-      });
-      return { ok: false, error: "AI returned empty response." };
+  if (!rawText?.trim()) {
+    await ctx.runMutation(internal.arcApplications.internalFailReview, {
+      submissionId,
+      aiError:
+        "The AI returned no text. Check OPENAI_API_KEY on your Convex deployment and try again.",
+    });
+    return { ok: false, error: "AI returned empty response." };
+  }
+
+  let feedback: ArcReviewFeedback | null = parseArcReviewResponse(rawText);
+  if (!feedback) {
+    feedback = fallbackFeedbackFromRaw(rawText, "Could not parse JSON from the model.");
+  }
+
+  await ctx.runMutation(internal.arcApplications.internalCompleteReview, {
+    submissionId,
+    verdict: feedback.verdict,
+    aiFeedbackJson: JSON.stringify(feedback),
+    aiModel: AI_MODEL,
+    promptHadTruncation,
+  });
+
+  return { ok: true };
+}
+
+/** Admin-triggered ARC review (from the property page). */
+export const runReview = action({
+  args: { submissionId: v.id("arcApplicationSubmissions") },
+  handler: async (ctx, args): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const viewer = await ctx.runQuery(api.tenancy.viewerContext, {});
+    if (!viewer || viewer.role !== "admin") {
+      return { ok: false, error: "Admin access required." };
     }
+    const submission = await ctx.runQuery(api.arcApplications.get, { id: args.submissionId });
+    if (!submission) return { ok: false, error: "Submission not found." };
+    return executeReview(ctx, args.submissionId);
+  },
+});
 
-    let feedback: ArcReviewFeedback | null = parseArcReviewResponse(rawText);
-    if (!feedback) {
-      feedback = fallbackFeedbackFromRaw(rawText, "Could not parse JSON from the model.");
-    }
-
-    const aiFeedbackJson = JSON.stringify(feedback);
-    await ctx.runMutation(internal.arcApplications.internalCompleteReview, {
-      submissionId: args.submissionId,
-      verdict: feedback.verdict,
-      aiFeedbackJson,
-      aiModel: AI_MODEL,
-      promptHadTruncation,
-    });
-
-    return { ok: true };
+/** Homeowner-triggered ARC review, scheduled after a homeowner submits. */
+export const internalRunReview = internalAction({
+  args: { submissionId: v.id("arcApplicationSubmissions") },
+  handler: async (ctx, args): Promise<{ ok: true } | { ok: false; error: string }> => {
+    return executeReview(ctx, args.submissionId);
   },
 });

@@ -16,6 +16,9 @@ export default function SignInPage() {
   const afterSignInPath = resolvePostSignInRedirect(location.state);
   const afterSignInAbsolute =
     typeof window !== "undefined" ? `${window.location.origin}${afterSignInPath}` : afterSignInPath;
+  // Homeowners self-serve (create their own account); admins/inspectors are provisioned.
+  const isHomeownerFlow =
+    afterSignInPath.startsWith("/home") || afterSignInPath.startsWith("/portal");
 
   useEffect(() => {
     if (!isLoaded) {
@@ -47,20 +50,28 @@ export default function SignInPage() {
     <div className="min-h-screen gradient-hero flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
-          <h1 className="text-3xl font-extrabold text-white">Sign in</h1>
+          <h1 className="text-3xl font-extrabold text-white">
+            {isHomeownerFlow ? "Homeowner sign in" : "Sign in"}
+          </h1>
           <p className="text-sky-200 mt-1 text-sm">
-            Account creation is admin-managed. Inspectors are provisioned by admin only.
+            {isHomeownerFlow
+              ? "Sign in or create an account with the email your HOA has on file."
+              : "Account creation is admin-managed. Inspectors are provisioned by admin only."}
           </p>
         </div>
         <div className="mx-auto flex justify-center">
           <SignIn
             fallbackRedirectUrl={afterSignInAbsolute}
-            appearance={{
-              elements: {
-                footerAction: "hidden",
-                footerActionLink: "hidden",
-              },
-            }}
+            appearance={
+              isHomeownerFlow
+                ? undefined
+                : {
+                    elements: {
+                      footerAction: "hidden",
+                      footerActionLink: "hidden",
+                    },
+                  }
+            }
           />
         </div>
       </div>

@@ -62,6 +62,24 @@ export default function RoleSignInLanding() {
             <span className="ml-auto text-white/60 group-hover:translate-x-1 transition-transform text-xl">→</span>
           </div>
         </button>
+
+        <button
+          type="button"
+          className="btn-bounce w-full rounded-2xl p-5 text-left shadow-xl border border-white/20 bg-white/10 group"
+          onClick={() => {
+            clearSignInReturnPath();
+            navigate("/sign-in", { state: { from: "/home" } });
+          }}
+        >
+          <div className="flex items-center gap-4">
+            <span className="text-4xl">🏡</span>
+            <div>
+              <p className="text-white font-bold text-xl">Homeowner</p>
+              <p className="text-emerald-100 text-sm">Your inspection, rules & requests</p>
+            </div>
+            <span className="ml-auto text-white/60 group-hover:translate-x-1 transition-transform text-xl">→</span>
+          </div>
+        </button>
       </div>
 
       <p className="mt-10 text-white/20 text-xs">Happier Block v{ONE_SHOT_VERSION}</p>

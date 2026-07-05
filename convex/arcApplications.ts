@@ -1,6 +1,8 @@
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { requireViewerRole } from "./lib/tenantAuth";
+import { requireHomeownerForProperty } from "./lib/homeownerAuth";
 
 const arcFileValidator = v.object({
   fileName: v.string(),
@@ -68,6 +70,80 @@ export const createSubmission = mutation({
   },
 });
 
+const homeownerPhotoValidator = v.object({
+  publicUrl: v.string(),
+  filePath: v.string(),
+});
+
+/** Homeowner-facing: list my ARC submissions for a property I own (safe fields). */
+export const listByHomeowner = query({
+  args: { propertyId: v.id("properties") },
+  handler: async (ctx, args) => {
+    await requireHomeownerForProperty(ctx, args.propertyId);
+    const property = await ctx.db.get(args.propertyId);
+    if (!property?.hoaId) return [];
+    const rows = await ctx.db
+      .query("arcApplicationSubmissions")
+      .withIndex("by_hoa_property", (q) =>
+        q.eq("hoaId", property.hoaId).eq("propertyId", args.propertyId),
+      )
+      .collect();
+    return rows
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((r) => ({
+        _id: r._id,
+        createdAt: r.createdAt,
+        status: r.status,
+        verdict: r.verdict ?? null,
+        aiFeedbackJson: r.aiFeedbackJson ?? null,
+        aiError: r.aiError ?? null,
+        projectType: r.projectType ?? "",
+        projectDescription: r.projectDescription ?? "",
+        homeownerPhotos: r.homeownerPhotos ?? [],
+        submittedByHomeowner: r.submittedByHomeowner ?? false,
+      }));
+  },
+});
+
+/**
+ * Homeowner submits an architectural request (project description + optional
+ * photos/files) and the AI review runs automatically via the scheduler.
+ */
+export const createByHomeowner = mutation({
+  args: {
+    propertyId: v.id("properties"),
+    projectType: v.string(),
+    projectDescription: v.string(),
+    homeownerPhotos: v.optional(v.array(homeownerPhotoValidator)),
+    files: v.optional(v.array(arcFileValidator)),
+  },
+  handler: async (ctx, args) => {
+    await requireHomeownerForProperty(ctx, args.propertyId);
+    const property = await ctx.db.get(args.propertyId);
+    if (!property?.hoaId) throw new Error("Property not found.");
+    if (!args.projectDescription.trim()) {
+      throw new Error("Please describe your project.");
+    }
+    const now = Date.now();
+    const submissionId = await ctx.db.insert("arcApplicationSubmissions", {
+      hoaId: property.hoaId,
+      propertyId: args.propertyId,
+      createdAt: now,
+      status: "ready",
+      files: args.files ?? [],
+      submittedByHomeowner: true,
+      projectType: args.projectType.trim(),
+      projectDescription: args.projectDescription.trim(),
+      homeownerPhotos: args.homeownerPhotos ?? [],
+    });
+    // Kick off the AI review immediately (internal, no admin gate).
+    await ctx.scheduler.runAfter(0, internal.arcApplicationReview.internalRunReview, {
+      submissionId,
+    });
+    return submissionId;
+  },
+});
+
 export const removeSubmission = mutation({
   args: { id: v.id("arcApplicationSubmissions") },
   handler: async (ctx, args) => {
@@ -76,6 +152,13 @@ export const removeSubmission = mutation({
     if (!row || row.hoaId !== viewer.hoaId) throw new Error("Submission not found.");
     await ctx.db.delete(args.id);
     return null;
+  },
+});
+
+export const getInternal = internalQuery({
+  args: { id: v.id("arcApplicationSubmissions") },
+  handler: async (ctx, args) => {
+    return ctx.db.get(args.id);
   },
 });
 
