@@ -23,8 +23,21 @@ authLog("bootstrap", "clerk_provider_mounting", {
   viteMode: import.meta.env.MODE,
 });
 
+// In the native shell the app runs from capacitor://localhost (iOS) or
+// http(s)://localhost (Android); Clerk must be told these are valid redirect
+// targets or it won't hand the session back after sign-in.
+const nativeRedirectOrigins = [
+  "capacitor://localhost",
+  "http://localhost",
+  "https://localhost",
+  "ionic://localhost",
+];
+
 createRoot(document.getElementById("root")!).render(
-  <ClerkProvider publishableKey={clerkPublishableKey}>
+  <ClerkProvider
+    publishableKey={clerkPublishableKey}
+    allowedRedirectOrigins={nativeRedirectOrigins}
+  >
     <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
       <App />
     </ConvexProviderWithClerk>
