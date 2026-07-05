@@ -17,6 +17,7 @@
     "mobile:sync": "CAPACITOR=1 vite build && cap sync",
     "mobile:ios": "cap open ios",
     "mobile:android": "cap open android",
+    "assets:generate": "capacitor-assets generate --ios --android",
     "preview": "vite preview",
     "lint": "eslint .",
     "import:summer2025": "tsx scripts/import-summer-2025.ts",
@@ -32,6 +33,7 @@
     "setup:convex-backup": "bash scripts/run-b2-convex-setup-on-vps.sh"
   },
   "dependencies": {
+    "@capacitor-community/speech-recognition": "^7.0.1",
     "@capacitor/android": "^8.4.1",
     "@capacitor/app": "^8.1.0",
     "@capacitor/browser": "^8.0.3",
@@ -84,6 +86,7 @@
     "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@eslint/js": "^9.32.0",
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",

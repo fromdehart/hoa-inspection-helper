@@ -10,6 +10,11 @@ import { useCachedQuery } from "@/offline/hooks";
 import { isOnline } from "@/native/network";
 import { hasNativeCamera, takePhoto, pickPhotos } from "@/native/camera";
 import {
+  isNativeSpeechAvailable,
+  startDictation,
+  stopDictation as stopNativeDictation,
+} from "@/native/speech";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -104,6 +109,8 @@ export default function PropertyCapture() {
   const statusMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  /** For native dictation: the field text captured when listening started (partials replace onto this base). */
+  const dictationBaseRef = useRef<{ section: NoteSection; base: string } | null>(null);
   const noteAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const aiBulletsAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteInitializedRef = useRef(false);
@@ -411,15 +418,14 @@ export default function PropertyCapture() {
   const canGoPrev = selectedPhotoIndex > 0;
   const canGoNext = selectedPhotoIndex < propertyPhotos.length - 1;
 
-  const stopBrowserSpeech = () => {
-    try {
-      recognitionRef.current?.stop?.();
-    } catch {
-      /* ignore */
-    }
-    recognitionRef.current = null;
-    setListeningSection(null);
+  const setSectionText = (section: NoteSection, text: string) => {
+    if (section === "front") setNoteFront(text);
+    else if (section === "side") setNoteSide(text);
+    else setNoteBack(text);
   };
+
+  const currentSectionText = (section: NoteSection): string =>
+    section === "front" ? noteFront : section === "side" ? noteSide : noteBack;
 
   const appendToSection = (section: NoteSection, chunk: string) => {
     const t = chunk.trim();
@@ -429,12 +435,51 @@ export default function PropertyCapture() {
     if (section === "back") setNoteBack((prev) => (prev ? `${prev} ${t}` : t).trim());
   };
 
+  /** Stop whichever dictation engine is active (native or web). */
+  const stopVoice = () => {
+    try {
+      recognitionRef.current?.stop?.();
+    } catch {
+      /* ignore */
+    }
+    recognitionRef.current = null;
+    if (dictationBaseRef.current) {
+      void stopNativeDictation();
+      dictationBaseRef.current = null;
+    }
+    setListeningSection(null);
+  };
+
   const handleMic = (section: NoteSection) => {
     if (listeningSection === section) {
-      stopBrowserSpeech();
+      stopVoice();
       return;
     }
-    stopBrowserSpeech();
+    stopVoice();
+
+    // Native (iOS/Android): Apple/Android on-device dictation. Partial results are the
+    // running transcript, so we replace onto the text captured at start (no duplication).
+    if (isNativeSpeechAvailable()) {
+      const base = currentSectionText(section);
+      dictationBaseRef.current = { section, base };
+      setListeningSection(section);
+      void startDictation(
+        (transcript) => {
+          const b = dictationBaseRef.current;
+          if (!b || b.section !== section) return;
+          setSectionText(section, b.base ? `${b.base} ${transcript}`.trim() : transcript.trim());
+        },
+        () => setListeningSection(null),
+      ).then((ok) => {
+        if (!ok) {
+          dictationBaseRef.current = null;
+          setListeningSection(null);
+        }
+      });
+      return;
+    }
+
+    // Web fallback: Web Speech API (Chrome/desktop). Appends only final chunks.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
@@ -456,13 +501,13 @@ export default function PropertyCapture() {
       }
       if (finalChunk) appendToSection(section, finalChunk);
     };
-    recognition.onerror = () => stopBrowserSpeech();
+    recognition.onerror = () => stopVoice();
     recognition.onend = () => setListeningSection(null);
     recognition.start();
   };
 
   const persistNotesIfDirty = async () => {
-    stopBrowserSpeech();
+    stopVoice();
     if (noteAutosaveTimerRef.current) {
       clearTimeout(noteAutosaveTimerRef.current);
       noteAutosaveTimerRef.current = null;

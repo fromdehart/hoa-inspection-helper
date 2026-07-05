@@ -22,8 +22,13 @@ not 17), the Android SDK (platform-tools, build-tools 35, platform android-35) a
 the beta is the active CLI toolchain). Open a **new terminal** so these env vars load.
 
 Notes:
-- **iOS uses Swift Package Manager**, not CocoaPods — Capacitor 8 writes `Package.swift`;
-  there is no `pod install` step. (CocoaPods is installed but unused.)
+- **iOS uses CocoaPods** (the project was regenerated with `--packagemanager CocoaPods`).
+  The default was Swift Package Manager, but the native speech-recognition plugin only
+  ships a CocoaPods podspec, so Pods is required for it (and most community plugins).
+  `cap sync` runs `pod install` automatically. Build via **`ios/App/App.xcworkspace`**
+  (the workspace), not the bare `.xcodeproj`.
+- **Native voice-to-text** is wired up (`@capacitor-community/speech-recognition`, Apple
+  on-device dictation) with a web fallback; the mic/speech Info.plist strings are set.
 - Still yours: an **Apple Developer account** (done) for real-device signing / App Store,
   and optionally **Android Studio** for an emulator (CLI device installs work via `adb`).
 
@@ -69,8 +74,8 @@ Quick CLI sanity builds (no signing needed):
 ```bash
 # Android debug APK
 (cd android && ./gradlew assembleDebug)
-# iOS simulator build
-xcodebuild -project ios/App/App.xcodeproj -scheme App \
+# iOS simulator build (CocoaPods → use the workspace)
+xcodebuild -workspace ios/App/App.xcworkspace -scheme App \
   -sdk iphonesimulator -configuration Debug \
   -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
