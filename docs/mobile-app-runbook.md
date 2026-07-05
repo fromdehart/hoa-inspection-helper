@@ -9,13 +9,23 @@ Bundle id: **`com.happierblock.app`** · App name: **Happier Block**
 
 ---
 
-## 0. Prerequisites (install once)
+## 0. Toolchain status — ALREADY SET UP on this machine ✅
 
-- **Xcode** (from the App Store) + command line tools: `xcode-select --install`
-- **CocoaPods**: `sudo gem install cocoapods` (or `brew install cocoapods`)
-- **Android Studio** + Android SDK (Giraffe+), and a JDK 17 (`brew install --cask temurin@17`)
-- **Apple Developer account** (for signing / device install / App Store)
-- Node 20+ (already have it)
+Both platforms have been generated and **verified building** here:
+- **Android** debug APK built (`android/app/build/outputs/apk/debug/app-debug.apk`).
+- **iOS** simulator build **SUCCEEDED** (Xcode 27 beta).
+
+Installed + configured (in `~/.zshrc`): CocoaPods, **OpenJDK 21** (Capacitor 8 needs 21,
+not 17), the Android SDK (platform-tools, build-tools 35, platform android-35) at
+`~/Library/Android/sdk`, and `DEVELOPER_DIR` pointing at **`/Applications/Xcode-beta.app`**
+(Xcode 27 beta — its license is accepted; the stable Xcode 26.6's license was not, so
+the beta is the active CLI toolchain). Open a **new terminal** so these env vars load.
+
+Notes:
+- **iOS uses Swift Package Manager**, not CocoaPods — Capacitor 8 writes `Package.swift`;
+  there is no `pod install` step. (CocoaPods is installed but unused.)
+- Still yours: an **Apple Developer account** (done) for real-device signing / App Store,
+  and optionally **Android Studio** for an emulator (CLI device installs work via `adb`).
 
 ---
 
@@ -42,17 +52,28 @@ VITE_UPLOAD_TOKEN=<same as UPLOAD_TOKEN on the VPS, if you enable it>
   the new CORS logic. Optionally set `UPLOAD_TOKEN` (must match `VITE_UPLOAD_TOKEN`).
 - **Convex**: no origin allowlist needed for the client; just confirm the deployment URL.
 
-## 3. Add the native platforms + build
+## 3. Build (platforms already added + committed)
+
+`ios/` and `android/` are already generated and committed, so you don't need
+`cap add`. After any web-code change, re-sync into the native projects:
 
 ```bash
-npm install                 # ensure deps are present
-npx cap add ios
-npx cap add android
-npm run build:mobile        # CAPACITOR=1 vite build && cap sync  (SW disabled for native)
+npm run build:mobile   # CAPACITOR=1 vite build && cap sync  (SW disabled for native)
 ```
 
 `build:mobile` produces `dist/` with **no service worker** (a SW conflicts with
 Capacitor's asset serving) and copies it into the native projects.
+
+Quick CLI sanity builds (no signing needed):
+
+```bash
+# Android debug APK
+(cd android && ./gradlew assembleDebug)
+# iOS simulator build
+xcodebuild -project ios/App/App.xcodeproj -scheme App \
+  -sdk iphonesimulator -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+```
 
 ## 4. Native permissions (required for the camera)
 
