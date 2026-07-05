@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { ClerkProvider, useAuth } from "@clerk/clerk-react";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
+import { BrowserRouter, useNavigate } from "react-router-dom";
 // Self-hosted "Plus Jakarta Sans" (offline-safe; preserves the family name).
 import "@fontsource/plus-jakarta-sans/400.css";
 import "@fontsource/plus-jakarta-sans/500.css";
@@ -33,13 +34,31 @@ const nativeRedirectOrigins = [
   "ionic://localhost",
 ];
 
+/**
+ * Clerk wired into React Router. Passing routerPush/routerReplace makes Clerk's
+ * post-sign-in redirect a client-side navigation instead of a hard window.location
+ * reload — critical in the native WebView, where a reload wipes the in-memory
+ * session (cookies don't persist there) and drops the user back to signed-out.
+ * Must render inside <BrowserRouter> so useNavigate has router context.
+ */
+function ClerkWithRouter() {
+  const navigate = useNavigate();
+  return (
+    <ClerkProvider
+      publishableKey={clerkPublishableKey}
+      allowedRedirectOrigins={nativeRedirectOrigins}
+      routerPush={(to) => navigate(to)}
+      routerReplace={(to) => navigate(to, { replace: true })}
+    >
+      <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+        <App />
+      </ConvexProviderWithClerk>
+    </ClerkProvider>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
-  <ClerkProvider
-    publishableKey={clerkPublishableKey}
-    allowedRedirectOrigins={nativeRedirectOrigins}
-  >
-    <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
-      <App />
-    </ConvexProviderWithClerk>
-  </ClerkProvider>,
+  <BrowserRouter>
+    <ClerkWithRouter />
+  </BrowserRouter>,
 );

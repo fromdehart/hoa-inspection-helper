@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import RoleGuard from "./components/RoleGuard";
 import SyncStatusBanner from "./components/SyncStatusBanner";
 import { startSyncManager } from "./offline/syncManager";
@@ -42,7 +42,7 @@ const App = () => {
   }, []);
 
   return (
-    <BrowserRouter>
+    <>
       <MembershipDisplayNameSync />
       <SyncStatusBanner />
       <Routes>
@@ -140,7 +140,7 @@ const App = () => {
           />
           <Route path="*" element={<NotFound />} />
       </Routes>
-    </BrowserRouter>
+    </>
   );
 };
 
