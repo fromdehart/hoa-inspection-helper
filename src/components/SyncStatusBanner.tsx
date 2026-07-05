@@ -32,7 +32,8 @@ export default function SyncStatusBanner() {
   return (
     <div
       className="fixed inset-x-0 z-50 flex justify-center px-4"
-      style={{ bottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      // Sit above the homeowner bottom nav / inspector action bars.
+      style={{ bottom: "calc(4.75rem + env(safe-area-inset-bottom))" }}
     >
       <button
         type="button"

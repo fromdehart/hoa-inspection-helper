@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import { uploadPhoto } from "@/lib/uploadClient";
+import { enqueuePhoto } from "@/offline/outbox";
+import { syncNow } from "@/offline/syncManager";
+import { hasNativeCamera, takePhoto } from "@/native/camera";
 import { useHomeProperty } from "./HomeLayout";
 import { VerificationBadge } from "./homeUi";
 
@@ -15,27 +17,41 @@ export default function FixPhotos() {
     api.fixPhotos.listForHomeowner,
     selected ? { propertyId: selected.propertyId } : "skip",
   );
-  const createFixPhoto = useMutation(api.fixPhotos.createForHomeowner);
 
   const handleUpload = async (file: File) => {
     if (!selected) return;
     setUploading(true);
     setError(null);
     try {
-      const result = await uploadPhoto(file, selected.propertyId, "fix");
-      await createFixPhoto({
+      // Queue to the outbox: resilient uploads + works if the signal drops.
+      await enqueuePhoto({
         propertyId: selected.propertyId,
-        filePath: result.filePath,
-        publicUrl: result.publicUrl,
+        section: "fix",
+        file,
+        kind: "fixPhoto",
       });
+      void syncNow();
     } catch (err) {
       setError(
         err instanceof Error
-          ? `${err.message}. Please check your connection and try again.`
+          ? `${err.message}. Please try again.`
           : "Upload failed. Please try again.",
       );
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleCapture = async () => {
+    if (hasNativeCamera()) {
+      try {
+        const file = await takePhoto();
+        await handleUpload(file);
+      } catch {
+        setError("Camera capture failed. Please try again.");
+      }
+    } else {
+      fileInputRef.current?.click();
     }
   };
 
@@ -65,10 +81,10 @@ export default function FixPhotos() {
         <button
           type="button"
           disabled={uploading}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => void handleCapture()}
           className="btn-bounce mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-60"
         >
-          {uploading ? "Uploading…" : "📷 Upload fix photo"}
+          {uploading ? "Saving…" : "📷 Upload fix photo"}
         </button>
         {error && (
           <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">

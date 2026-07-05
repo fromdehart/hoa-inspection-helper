@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { uploadArcApplicationFile } from "@/lib/uploadClient";
+import { hasNativeCamera, pickPhotos } from "@/native/camera";
 import { useHomeProperty } from "./HomeLayout";
 
 const VERDICT_UI: Record<string, { label: string; className: string }> = {
@@ -59,12 +60,12 @@ export default function ArcRequest() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const uploadPhotos = async (files: FileList) => {
-    if (!selected) return;
+  const uploadPhotos = async (files: File[]) => {
+    if (!selected || files.length === 0) return;
     setBusy(true);
     setError(null);
     try {
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         const up = await uploadArcApplicationFile(selected.propertyId, file);
         setPhotos((p) => [...p, { publicUrl: up.publicUrl, filePath: up.filePath }]);
       }
@@ -72,6 +73,18 @@ export default function ArcRequest() {
       setError(e instanceof Error ? e.message : "Photo upload failed.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const addPhotos = async () => {
+    if (hasNativeCamera()) {
+      try {
+        await uploadPhotos(await pickPhotos());
+      } catch {
+        setError("Could not open the camera roll. Please try again.");
+      }
+    } else {
+      photoInputRef.current?.click();
     }
   };
 
@@ -132,14 +145,14 @@ export default function ArcRequest() {
           multiple
           className="hidden"
           onChange={(e) => {
-            if (e.target.files?.length) void uploadPhotos(e.target.files);
+            if (e.target.files?.length) void uploadPhotos(Array.from(e.target.files));
             e.target.value = "";
           }}
         />
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => photoInputRef.current?.click()}
+            onClick={() => void addPhotos()}
             disabled={busy}
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700"
           >

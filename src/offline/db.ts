@@ -9,9 +9,13 @@ export interface CacheEntry {
 
 export type OutboxStatus = "pending" | "inflight" | "failed" | "done";
 
+export type OutboxPhotoKind = "inspectorPhoto" | "fixPhoto";
+
 /** A photo captured offline (or online) that must be uploaded + registered in Convex. */
 export interface OutboxPhoto {
   id: string; // uuid
+  /** Which Convex flow registers this photo once uploaded. */
+  kind: OutboxPhotoKind;
   propertyId: string;
   section: string;
   /** Reference to the locally-stored image bytes (see native/photoFiles). */

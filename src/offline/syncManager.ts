@@ -62,6 +62,19 @@ async function syncOnePhoto(row: OutboxPhoto): Promise<void> {
   try {
     const file = await readPhotoFile(row.fileRef, row.fileName);
 
+    // Homeowner "fix photo": single full upload → createForHomeowner.
+    if (row.kind === "fixPhoto") {
+      const full = await uploadPhoto(file, row.propertyId, row.section);
+      await convex.mutation(api.fixPhotos.createForHomeowner, {
+        propertyId,
+        filePath: full.filePath,
+        publicUrl: full.publicUrl,
+      });
+      await markPhotoDone(row.id);
+      return;
+    }
+
+    // Inspector photo (default): thumbnail-first + background full upload.
     // If a prior attempt already created the Convex record, only finish the full upload.
     let photoId = row.photoId as Id<"photos"> | undefined;
 

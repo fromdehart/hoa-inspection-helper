@@ -1,21 +1,24 @@
-import { db, type OutboxPhoto } from "./db";
+import { db, type OutboxPhoto, type OutboxPhotoKind } from "./db";
 import { savePhotoFile, deletePhotoFile } from "../native/photoFiles";
 
 /**
  * Persist a captured photo locally and enqueue it for upload. Returns the outbox
- * id. The sync manager uploads it (thumbnail + full) and registers it in Convex
- * when online — so capture never blocks on connectivity.
+ * id. The sync manager uploads it and registers it in Convex when online — so
+ * capture never blocks on connectivity. `kind` selects the Convex flow
+ * (inspector photo vs. homeowner fix photo).
  */
 export async function enqueuePhoto(input: {
   propertyId: string;
   section: string;
   file: File;
+  kind?: OutboxPhotoKind;
 }): Promise<string> {
   const id = crypto.randomUUID();
   const fileRef = id;
   await savePhotoFile(fileRef, input.file);
   const row: OutboxPhoto = {
     id,
+    kind: input.kind ?? "inspectorPhoto",
     propertyId: input.propertyId,
     section: input.section,
     fileRef,
