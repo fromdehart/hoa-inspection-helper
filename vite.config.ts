@@ -3,30 +3,19 @@ import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
-// https://vitejs.dev/config/
-export default defineConfig({
-  /** Ensures SPA fallback + routing match Vercel’s Vite SPA guidance */
-  appType: "spa",
-  base: "/",
-  server: {
-    host: "::",
-    port: 8080,
-    hmr: {
-      overlay: false,
-    },
-  },
-  /** Same host/port as dev so `npm run local:vercel` matches production styling at localhost:8080 */
-  preview: {
-    host: "::",
-    port: 8080,
-  },
-  plugins: [
-    react(),
-    /**
-     * PWA: precaches the built SPA shell only. We intentionally avoid runtime caching rules for
-     * Clerk, Convex, or upload hosts so auth and live data are never served stale from a SW.
-     */
-    VitePWA({
+// When building for the Capacitor native shell, disable the PWA service worker:
+// a SW intercepting the bundled localhost assets conflicts with Capacitor's
+// native asset serving. Build with `CAPACITOR=1 vite build` (npm run build:mobile).
+const isCapacitorBuild = process.env.CAPACITOR === "1";
+
+const pwaPlugin = isCapacitorBuild
+  ? []
+  : [
+      /**
+       * PWA: precaches the built SPA shell only. We intentionally avoid runtime caching rules for
+       * Clerk, Convex, or upload hosts so auth and live data are never served stale from a SW.
+       */
+      VitePWA({
       registerType: "autoUpdate",
       injectRegister: "auto",
       devOptions: {
@@ -80,8 +69,27 @@ export default defineConfig({
           },
         ],
       },
-    }),
-  ],
+      }),
+    ];
+
+// https://vitejs.dev/config/
+export default defineConfig({
+  /** Ensures SPA fallback + routing match Vercel’s Vite SPA guidance */
+  appType: "spa",
+  base: "/",
+  server: {
+    host: "::",
+    port: 8080,
+    hmr: {
+      overlay: false,
+    },
+  },
+  /** Same host/port as dev so `npm run local:vercel` matches production styling at localhost:8080 */
+  preview: {
+    host: "::",
+    port: 8080,
+  },
+  plugins: [react(), ...pwaPlugin],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
