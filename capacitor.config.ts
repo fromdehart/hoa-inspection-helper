@@ -4,10 +4,13 @@ const config: CapacitorConfig = {
   appId: "com.happierblock.app",
   appName: "Happier Block",
   webDir: "dist",
-  // Android serves the bundled app from https://localhost (matches iOS's secure
-  // context, keeps CORS/allowed-origin handling consistent across platforms).
+  // Serve the bundled app from https://localhost on BOTH platforms. The iOS
+  // default (capacitor://) is a custom scheme where cookies don't persist, which
+  // breaks cookie-based auth (Clerk). https://localhost is a proper secure
+  // context, so the session sticks. Keeps CORS/allowed-origins consistent too.
   server: {
     androidScheme: "https",
+    iosScheme: "https",
   },
   ios: {
     contentInset: "always",
