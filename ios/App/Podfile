@@ -29,4 +29,13 @@ end
 
 post_install do |installer|
   assertDeploymentTarget(installer)
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      # Capacitor's bundled Cordova headers use quoted (#import "…") includes.
+      # Xcode's "module verifier" (offered by the Update-to-recommended-settings
+      # prompt) rejects those as errors, so keep it off for the pods.
+      config.build_settings['ENABLE_MODULE_VERIFIER'] = 'NO'
+      config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+    end
+  end
 end
