@@ -7,6 +7,7 @@ import { Id } from "../../../convex/_generated/dataModel";
 import { enqueuePhoto, enqueueNote } from "@/offline/outbox";
 import { syncNow } from "@/offline/syncManager";
 import { useCachedQuery } from "@/offline/hooks";
+import { FieldCaseControls } from "@/components/cases/FieldCaseControls";
 import { isOnline } from "@/native/network";
 import { hasNativeCamera, takePhoto, pickPhotos } from "@/native/camera";
 import {
@@ -744,6 +745,8 @@ export default function PropertyCapture() {
             ))}
           </div>
         )}
+
+        {viewer?.features?.includes("cases") && <FieldCaseControls propertyId={pid} />}
 
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-4">
           <h2 className="font-bold text-gray-800">📝 Inspection notes</h2>

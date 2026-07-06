@@ -94,9 +94,14 @@ function PlatformHoaListContent() {
               <h1 className="text-2xl font-extrabold text-white">Platform Admin</h1>
               <p className="text-sky-100 text-sm mt-1">Manage neighborhoods and assign HOA admins</p>
             </div>
-            <Link to="/" className="text-sm text-sky-100 hover:text-white">
-              Home
-            </Link>
+            <div className="flex items-center gap-4">
+              <Link to="/platform/companies" className="text-sm text-sky-100 hover:text-white">
+                Management companies
+              </Link>
+              <Link to="/" className="text-sm text-sky-100 hover:text-white">
+                Home
+              </Link>
+            </div>
           </div>
         </div>
 

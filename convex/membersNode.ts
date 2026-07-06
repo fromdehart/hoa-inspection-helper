@@ -5,7 +5,7 @@ import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 
-const ROLE_VALIDATOR = v.union(v.literal("admin"), v.literal("inspector"));
+const ROLE_VALIDATOR = v.union(v.literal("admin"), v.literal("inspector"), v.literal("board"));
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function normalizeEmail(value: string): string {

@@ -98,6 +98,7 @@ export const myProperties = query({
           status: property.status,
           hoaId: property.hoaId ?? null,
           hoaName: hoa?.name ?? "",
+          casesEnabled: hoa?.featureFlags?.includes("cases") ?? false,
         };
       }),
     );

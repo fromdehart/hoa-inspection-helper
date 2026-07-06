@@ -4,7 +4,7 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 
-type Role = "admin" | "inspector";
+type Role = "admin" | "inspector" | "board";
 
 export default function Members() {
   const navigate = useNavigate();
@@ -105,6 +105,10 @@ export default function Members() {
           <p className="text-sm text-gray-500 mt-1">
             Pre-create a member account and assign a role before their first sign-in.
           </p>
+          <p className="text-xs text-amber-700 mt-1">
+            Note: each account belongs to one neighborhood — inviting someone who already belongs
+            to another HOA moves their membership here.
+          </p>
           <form className="mt-4 grid gap-3 md:grid-cols-4" onSubmit={handleAddMember}>
             <input
               value={fullName}
@@ -127,6 +131,7 @@ export default function Members() {
             >
               <option value="inspector">Inspector</option>
               <option value="admin">Admin</option>
+              <option value="board">Board (read-only)</option>
             </select>
             <button
               type="submit"
@@ -167,6 +172,7 @@ export default function Members() {
                       >
                         <option value="inspector">Inspector</option>
                         <option value="admin">Admin</option>
+                        <option value="board">Board (read-only)</option>
                       </select>
                     </td>
                     <td className="px-2 py-2 text-xs text-gray-500">{member.clerkUserId}</td>

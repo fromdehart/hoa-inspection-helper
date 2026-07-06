@@ -14,6 +14,8 @@ import {
   fileToBase64,
   looksLikeRawPdfPayload,
 } from "@/lib/extractPdfText";
+import { WorkflowEditor } from "@/components/cases/WorkflowEditor";
+import { EmailIntakeSettings } from "@/components/cases/EmailIntakeSettings";
 
 /** Convex may store `templateText: ""`; `??` would hide non-empty `parsedText` and leave the editor blank. */
 function editorBodyFromStoredTemplate(doc: { templateText?: string; parsedText?: string } | null | undefined): string {
@@ -25,6 +27,7 @@ function editorBodyFromStoredTemplate(doc: { templateText?: string; parsedText?:
 
 export default function Settings() {
   const navigate = useNavigate();
+  const settingsViewer = useQuery(api.tenancy.viewerContext, {});
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const [templateErr, setTemplateErr] = useState("");
   const [docTemplateText, setDocTemplateText] = useState("");
@@ -279,6 +282,24 @@ export default function Settings() {
             </div>
           )}
         </section>
+
+        {settingsViewer?.features?.includes("cases") && (
+          <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+            <h2 className="text-lg font-bold text-gray-800">Case workflow</h2>
+            <p className="text-xs text-muted-foreground">
+              The escalation ladder cases follow, per case type. Stage gates enforce due-process
+              steps (notice sent, hearing decided, photo evidence) before a case can advance.
+            </p>
+            <WorkflowEditor />
+          </section>
+        )}
+
+        {settingsViewer?.features?.includes("emailIntake") && (
+          <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+            <h2 className="text-lg font-bold text-gray-800">Email intake</h2>
+            <EmailIntakeSettings hoaSlug={settingsViewer.hoaSlug} />
+          </section>
+        )}
 
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
           <h2 className="text-lg font-bold text-gray-800">ARC review behavior</h2>

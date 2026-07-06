@@ -1,17 +1,17 @@
-export type AppRole = "admin" | "inspector";
+export type AppRole = "admin" | "inspector" | "board";
 
 type MetadataCarrier = {
   publicMetadata?: Record<string, unknown>;
 };
 
-const validRoles: AppRole[] = ["admin", "inspector"];
+const validRoles: AppRole[] = ["admin", "inspector", "board"];
 
 export function getUserRoles(user: MetadataCarrier | null | undefined): AppRole[] {
   const rawRole = user?.publicMetadata?.role;
   const rawRoles = user?.publicMetadata?.roles;
 
   const out = new Set<AppRole>();
-  if (rawRole === "admin" || rawRole === "inspector") out.add(rawRole);
+  if (rawRole === "admin" || rawRole === "inspector" || rawRole === "board") out.add(rawRole);
   if (Array.isArray(rawRoles)) {
     for (const role of rawRoles) {
       if (typeof role === "string" && validRoles.includes(role as AppRole)) {

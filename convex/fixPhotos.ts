@@ -1,7 +1,34 @@
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { requireViewerRole } from "./lib/tenantAuth";
 import { requireHomeownerForProperty } from "./lib/homeownerAuth";
+import { findOpenViolationCase } from "./cases";
+import { logCaseEvent } from "./lib/caseEvents";
+
+/** Mirror a fix-photo upload into the property's open violation case, if any. */
+async function logFixSubmitted(
+  ctx: MutationCtx,
+  propertyId: Id<"properties">,
+  fixPhotoId: Id<"fixPhotos">,
+  actorRole: "homeowner" | "inspector" | "admin",
+  actorClerkUserId?: string,
+): Promise<void> {
+  const openCase = await findOpenViolationCase(ctx, propertyId);
+  if (!openCase) return;
+  await logCaseEvent(ctx, {
+    hoaId: openCase.hoaId,
+    caseId: openCase._id,
+    propertyId,
+    type: "fixSubmitted",
+    actorRole,
+    actorClerkUserId,
+    summary: "Fix photo submitted for review",
+    visibility: "shared",
+    fixPhotoId,
+  });
+}
 
 export const listByProperty = query({
   args: { propertyId: v.id("properties") },
@@ -56,10 +83,10 @@ export const createForHomeowner = mutation({
     publicUrl: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireHomeownerForProperty(ctx, args.propertyId);
+    const homeowner = await requireHomeownerForProperty(ctx, args.propertyId);
     const property = await ctx.db.get(args.propertyId);
     if (!property || !property.hoaId) throw new Error("Property not found.");
-    return ctx.db.insert("fixPhotos", {
+    const fixPhotoId = await ctx.db.insert("fixPhotos", {
       hoaId: property.hoaId,
       propertyId: args.propertyId,
       filePath: args.filePath,
@@ -68,6 +95,8 @@ export const createForHomeowner = mutation({
       verificationStatus: "needsReview",
       verificationNote: "Awaiting manual review (automated image verification disabled).",
     });
+    await logFixSubmitted(ctx, args.propertyId, fixPhotoId, "homeowner", homeowner.clerkUserId);
+    return fixPhotoId;
   },
 });
 
@@ -97,6 +126,13 @@ export const create = mutation({
       verificationStatus: "needsReview",
       verificationNote: "Awaiting manual review (automated image verification disabled).",
     });
+    await logFixSubmitted(
+      ctx,
+      args.propertyId,
+      fixPhotoId,
+      viewer.role === "inspector" ? "inspector" : "admin",
+      viewer.clerkUserId,
+    );
     return fixPhotoId;
   },
 });
@@ -122,6 +158,7 @@ export const createByToken = mutation({
       verificationStatus: "needsReview",
       verificationNote: "Awaiting manual review (automated image verification disabled).",
     });
+    await logFixSubmitted(ctx, property._id, fixPhotoId, "homeowner");
     return fixPhotoId;
   },
 });
@@ -165,6 +202,27 @@ export const setVerification = mutation({
       verificationStatus: args.status,
       verificationNote: args.note ?? "",
     });
+
+    // Mirror verification outcomes into the case timeline.
+    if (args.status === "resolved" || args.status === "notResolved") {
+      const openCase = await findOpenViolationCase(ctx, fixPhoto.propertyId);
+      if (openCase) {
+        await logCaseEvent(ctx, {
+          hoaId: openCase.hoaId,
+          caseId: openCase._id,
+          propertyId: fixPhoto.propertyId,
+          type: "noteAdded",
+          actorRole: "admin",
+          actorClerkUserId: viewer.clerkUserId,
+          summary:
+            args.status === "resolved"
+              ? "Fix photo verified — issue resolved"
+              : "Fix photo reviewed — issue not resolved",
+          visibility: "shared",
+          fixPhotoId: fixPhoto._id,
+        });
+      }
+    }
     return null;
   },
 });

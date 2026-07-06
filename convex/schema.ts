@@ -1,20 +1,67 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  caseActorRoleValidator,
+  caseEventTypeValidator,
+  caseEventVisibilityValidator,
+  caseSourceValidator,
+  caseStatusValidator,
+  caseTypeValidator,
+  severityValidator,
+} from "./lib/caseValidators";
 
 export default defineSchema({
   hoas: defineTable({
     name: v.string(),
     slug: v.string(),
     status: v.union(v.literal("active"), v.literal("inactive")),
+    /** Per-HOA feature flags (e.g. "cases", "emailIntake"); toggled by platform admins. */
+    featureFlags: v.optional(v.array(v.string())),
+    /** Management company whose portfolio this HOA belongs to (optional). */
+    managementCompanyId: v.optional(v.id("managementCompanies")),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_slug", ["slug"]),
+    .index("by_slug", ["slug"])
+    .index("by_company", ["managementCompanyId"]),
+
+  /** A property-management firm operating a portfolio of HOAs. */
+  managementCompanies: defineTable({
+    name: v.string(),
+    slug: v.string(),
+    status: v.union(v.literal("active"), v.literal("inactive")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_slug", ["slug"]),
+
+  /** Company staff (one membership row per user, mirroring userHoaMemberships' one-row assumption). */
+  companyMemberships: defineTable({
+    clerkUserId: v.string(),
+    companyId: v.id("managementCompanies"),
+    role: v.union(v.literal("owner"), v.literal("manager")),
+    fullName: v.optional(v.string()),
+    email: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_clerk_user", ["clerkUserId"])
+    .index("by_company", ["companyId"]),
+
+  /**
+   * Company manager "acting as" an HOA in their portfolio. Deliberately
+   * separate from platformAdminSessions: company acting is re-scoped
+   * (hoa.managementCompanyId must match) on every read.
+   */
+  companySessions: defineTable({
+    clerkUserId: v.string(),
+    actingHoaId: v.optional(v.id("hoas")),
+    updatedAt: v.number(),
+  }).index("by_clerk_user", ["clerkUserId"]),
 
   userHoaMemberships: defineTable({
     clerkUserId: v.string(),
     hoaId: v.id("hoas"),
-    role: v.union(v.literal("admin"), v.literal("inspector")),
+    role: v.union(v.literal("admin"), v.literal("inspector"), v.literal("board")),
     email: v.optional(v.string()),
     fullName: v.optional(v.string()),
     invitedByClerkUserId: v.optional(v.string()),
@@ -302,7 +349,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_clerk_property", ["clerkUserId", "propertyId"])
-    .index("by_property", ["propertyId"]),
+    .index("by_property", ["propertyId"])
+    .index("by_hoa", ["hoaId"]),
 
   chatMessages: defineTable({
     conversationId: v.id("chatConversations"),
@@ -319,4 +367,220 @@ export default defineSchema({
     count: v.number(),
   })
     .index("by_clerk_user", ["clerkUserId"]),
+
+  /** Sliding-window rate limit for management-company copilot AI calls. */
+  companyAiUsage: defineTable({
+    clerkUserId: v.string(),
+    windowStart: v.number(),
+    count: v.number(),
+  })
+    .index("by_clerk_user", ["clerkUserId"]),
+
+  /**
+   * A tracked matter at a household (violation, architectural, maintenance,
+   * complaint, inquiry). Many cases per property. The current stage lives in
+   * `stageKey` (data-driven ladder); `status` is a derived rollup for cheap
+   * filtering. All history is in `caseEvents` (append-only).
+   */
+  cases: defineTable({
+    hoaId: v.id("hoas"),
+    propertyId: v.id("properties"),
+    caseType: caseTypeValidator,
+    /** Optional sub-category (paint, landscaping, parking, …); reuses arcReferenceDocs categories. */
+    category: v.optional(v.string()),
+    title: v.string(),
+    description: v.optional(v.string()),
+    severity: v.optional(severityValidator),
+    /** Current stage KEY into the workflow ladder for this caseType. */
+    stageKey: v.string(),
+    status: caseStatusValidator,
+    source: caseSourceValidator,
+    /** The staff member who owns this case. */
+    assignedToClerkUserId: v.optional(v.string()),
+    /** Deadline currently governing the case (e.g. cure-period end). Drives SLA queues. */
+    actionDueAt: v.optional(v.number()),
+    originArcSubmissionId: v.optional(v.id("arcApplicationSubmissions")),
+    openedAt: v.number(),
+    closedAt: v.optional(v.number()),
+    createdByClerkUserId: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_hoa", ["hoaId"])
+    .index("by_hoa_property", ["hoaId", "propertyId"])
+    .index("by_property", ["propertyId"])
+    .index("by_hoa_status", ["hoaId", "status"])
+    .index("by_assignee_status", ["assignedToClerkUserId", "status"])
+    .index("by_hoa_due", ["hoaId", "actionDueAt"]),
+
+  /**
+   * Append-only audit trail. One immutable row per state change; never edited
+   * or deleted. Written exclusively via lib/caseEvents.logCaseEvent. Rows with
+   * visibility "internal" are hidden from homeowner- and board-facing views.
+   */
+  caseEvents: defineTable({
+    hoaId: v.id("hoas"),
+    caseId: v.id("cases"),
+    propertyId: v.id("properties"),
+    type: caseEventTypeValidator,
+    actorClerkUserId: v.optional(v.string()),
+    actorRole: caseActorRoleValidator,
+    fromStageKey: v.optional(v.string()),
+    toStageKey: v.optional(v.string()),
+    /** Human-readable line shown in the timeline. */
+    summary: v.string(),
+    visibility: caseEventVisibilityValidator,
+    /** Optional refs to artifacts created by this event. */
+    noticeId: v.optional(v.id("notices")),
+    hearingId: v.optional(v.id("hearings")),
+    fineId: v.optional(v.id("fines")),
+    photoId: v.optional(v.id("photos")),
+    fixPhotoId: v.optional(v.id("fixPhotos")),
+    inboundEmailId: v.optional(v.id("inboundEmails")),
+    createdAt: v.number(),
+  })
+    .index("by_case", ["caseId"])
+    .index("by_property", ["propertyId"])
+    .index("by_hoa", ["hoaId"]),
+
+  /**
+   * Per-HOA, per-caseType escalation ladder (due-process steps vary by state
+   * and governing docs, so the ladder is data). Seeded from lib/defaultWorkflows.
+   */
+  caseWorkflows: defineTable({
+    hoaId: v.id("hoas"),
+    caseType: caseTypeValidator,
+    name: v.string(),
+    stages: v.array(
+      v.object({
+        key: v.string(),
+        label: v.string(),
+        statusRollup: caseStatusValidator,
+        dueInDays: v.optional(v.number()),
+        requiresNotice: v.optional(v.boolean()),
+        requiresHearing: v.optional(v.boolean()),
+        requiresPhotoEvidence: v.optional(v.boolean()),
+        fineAmount: v.optional(v.number()),
+        noticeTemplateKey: v.optional(v.string()),
+      }),
+    ),
+    isActive: v.boolean(),
+    updatedAt: v.number(),
+  })
+    .index("by_hoa", ["hoaId"])
+    .index("by_hoa_type", ["hoaId", "caseType"]),
+
+  /** Generated case correspondence + delivery tracking (stage notices, decision letters). */
+  notices: defineTable({
+    hoaId: v.id("hoas"),
+    caseId: v.id("cases"),
+    propertyId: v.id("properties"),
+    stageKey: v.string(),
+    templateKey: v.optional(v.string()),
+    html: v.string(),
+    channel: v.union(v.literal("email"), v.literal("portal"), v.literal("mail")),
+    deliveryStatus: v.union(
+      v.literal("draft"),
+      v.literal("sent"),
+      v.literal("delivered"),
+      v.literal("failed"),
+    ),
+    sentAt: v.optional(v.number()),
+    deliveredAt: v.optional(v.number()),
+    openedAt: v.optional(v.number()),
+    createdByClerkUserId: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_case", ["caseId"])
+    .index("by_hoa", ["hoaId"]),
+
+  /** The "opportunity to be heard" record for a case. */
+  hearings: defineTable({
+    hoaId: v.id("hoas"),
+    caseId: v.id("cases"),
+    propertyId: v.id("properties"),
+    /** Hearing-notice date (starts the due-process clock). */
+    noticeSentAt: v.optional(v.number()),
+    scheduledFor: v.number(),
+    location: v.optional(v.string()),
+    homeownerNotified: v.boolean(),
+    outcome: v.optional(
+      v.union(
+        v.literal("upheld"),
+        v.literal("dismissed"),
+        v.literal("continued"),
+        v.literal("resolved"),
+      ),
+    ),
+    decisionText: v.optional(v.string()),
+    decisionLetterNoticeId: v.optional(v.id("notices")),
+    decidedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_case", ["caseId"])
+    .index("by_hoa", ["hoaId"])
+    .index("by_hoa_scheduled", ["hoaId", "scheduledFor"]),
+
+  /**
+   * Fine assessment + tracking ONLY — no payment processing. Records that a
+   * fine was levied, its rule basis, and whether it was waived or satisfied
+   * externally. Money movement stays in the firm's accounting system.
+   */
+  fines: defineTable({
+    hoaId: v.id("hoas"),
+    caseId: v.id("cases"),
+    propertyId: v.id("properties"),
+    amount: v.number(),
+    reason: v.string(),
+    stageKey: v.string(),
+    /** Governing-doc/rule reference this fine is based on (defensibility). */
+    ruleReference: v.optional(v.string()),
+    status: v.union(v.literal("assessed"), v.literal("waived"), v.literal("satisfied")),
+    assessedByClerkUserId: v.optional(v.string()),
+    assessedAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+  })
+    .index("by_case", ["caseId"])
+    .index("by_hoa", ["hoaId"]),
+
+  /** Raw archive + processing state for inbound case emails (email intake pipeline). */
+  inboundEmails: defineTable({
+    hoaId: v.optional(v.id("hoas")),
+    caseId: v.optional(v.id("cases")),
+    propertyId: v.optional(v.id("properties")),
+    from: v.string(),
+    to: v.string(),
+    subject: v.string(),
+    textBody: v.string(),
+    htmlBody: v.optional(v.string()),
+    messageId: v.string(),
+    inReplyTo: v.optional(v.string()),
+    attachmentsMeta: v.optional(
+      v.array(v.object({ fileName: v.string(), contentType: v.string(), size: v.number() })),
+    ),
+    status: v.union(
+      v.literal("received"),
+      v.literal("processed"),
+      v.literal("quarantined"),
+      v.literal("rejected"),
+      v.literal("error"),
+    ),
+    aiSummary: v.optional(v.string()),
+    processedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_hoa", ["hoaId"])
+    .index("by_case", ["caseId"])
+    .index("by_message_id", ["messageId"]),
+
+  /** Explicit per-HOA approved-sender allowlist for email intake (implicit approval also derives from membership/property emails). */
+  approvedSenders: defineTable({
+    hoaId: v.id("hoas"),
+    email: v.string(),
+    label: v.optional(v.string()),
+    addedByClerkUserId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_hoa_email", ["hoaId", "email"])
+    .index("by_hoa", ["hoaId"]),
 });

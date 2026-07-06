@@ -20,6 +20,8 @@ export const viewerContext = query({
           hoaSlug: "",
           isPlatformAdmin: true,
           isActingAsAdmin: false,
+          actingVia: null,
+          features: [] as string[],
         };
       }
       return null;
@@ -34,6 +36,8 @@ export const viewerContext = query({
       hoaSlug: hoa?.slug ?? "",
       isPlatformAdmin: viewer.isPlatformAdmin,
       isActingAsAdmin: viewer.isActingAsAdmin,
+      actingVia: viewer.actingVia ?? null,
+      features: hoa?.featureFlags ?? [],
     };
   },
 });

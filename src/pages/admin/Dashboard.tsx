@@ -324,6 +324,18 @@ export default function Dashboard() {
                   <SheetTitle className="text-left text-gray-900">Menu</SheetTitle>
                 </SheetHeader>
                 <nav className="mt-6 flex flex-col gap-2" aria-label="Dashboard actions">
+                  {viewer?.features?.includes("cases") && (
+                    <button
+                      type="button"
+                      className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
+                      onClick={() => {
+                        setAdminMenuOpen(false);
+                        navigate("/admin/cases");
+                      }}
+                    >
+                      🗂️ Case Queue
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors md:hidden"

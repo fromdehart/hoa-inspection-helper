@@ -15,6 +15,38 @@ import {
   resolveSectionInputs,
 } from "./lib/inspectorNotes";
 import { propertyStatusValidator } from "./lib/propertyStatus";
+import { findOpenViolationCase, openCaseInternal } from "./cases";
+import { logCaseEvent } from "./lib/caseEvents";
+import { isFeatureEnabled } from "./lib/featureFlags";
+
+/**
+ * Legacy→case mirror: when an inspection is completed and the "cases" flag is
+ * on, ensure the property has an open violation case so the new timeline is
+ * populated from day one. No-op when the flag is off or a case already exists.
+ */
+async function ensureViolationCaseForInspection(
+  ctx: MutationCtx,
+  property: {
+    _id: Id<"properties">;
+    hoaId?: Id<"hoas">;
+  },
+  actorRole: "admin" | "inspector",
+  actorClerkUserId: string,
+): Promise<void> {
+  if (!property.hoaId) return;
+  if (!(await isFeatureEnabled(ctx, property.hoaId, "cases"))) return;
+  const existing = await findOpenViolationCase(ctx, property._id);
+  if (existing) return;
+  await openCaseInternal(ctx, {
+    hoaId: property.hoaId,
+    propertyId: property._id,
+    caseType: "violation",
+    title: "Exterior inspection findings",
+    source: "inspection",
+    actorRole,
+    actorClerkUserId,
+  });
+}
 
 export const list = query({
   args: {
@@ -233,6 +265,20 @@ export const markLetterSent = internalMutation({
   args: { id: v.id("properties") },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, { letterSentAt: Date.now() });
+
+    // Mirror the legacy letter-send into the case timeline, if a case is open.
+    const openCase = await findOpenViolationCase(ctx, args.id);
+    if (openCase) {
+      await logCaseEvent(ctx, {
+        hoaId: openCase.hoaId,
+        caseId: openCase._id,
+        propertyId: args.id,
+        type: "noticeSent",
+        actorRole: "system",
+        summary: "Violation letter emailed to homeowner",
+        visibility: "shared",
+      });
+    }
     return null;
   },
 });
@@ -516,6 +562,14 @@ export const completeHouseCapture = mutation({
     await ctx.db.patch(args.id, {
       status: verified ? "complete" : "review",
     });
+    if (propertyHasInspectorNotesContent(property)) {
+      await ensureViolationCaseForInspection(
+        ctx,
+        property,
+        viewer.role === "inspector" ? "inspector" : "admin",
+        viewer.clerkUserId,
+      );
+    }
     return { ok: true as const };
   },
 });
@@ -631,6 +685,27 @@ export const completeHouseAndSaveLetter = mutation({
       generatedLetterHtml: html,
       generatedLetterAt: Date.now(),
     });
+    if (propertyHasInspectorNotesContent(property)) {
+      await ensureViolationCaseForInspection(
+        ctx,
+        property,
+        viewer.role === "inspector" ? "inspector" : "admin",
+        viewer.clerkUserId,
+      );
+    }
+    const openCase = await findOpenViolationCase(ctx, args.id);
+    if (openCase) {
+      await logCaseEvent(ctx, {
+        hoaId: openCase.hoaId,
+        caseId: openCase._id,
+        propertyId: args.id,
+        type: "noticeGenerated",
+        actorRole: viewer.role === "inspector" ? "inspector" : "admin",
+        actorClerkUserId: viewer.clerkUserId,
+        summary: "Violation letter generated",
+        visibility: "shared",
+      });
+    }
     return { ok: true as const };
   },
 });

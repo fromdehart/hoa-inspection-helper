@@ -11,6 +11,10 @@ import Settings from "./pages/admin/Settings";
 import Members from "./pages/admin/Members";
 import PropertyReview from "./pages/admin/PropertyReview";
 import LetterExport from "./pages/admin/LetterExport";
+import CaseQueue from "./pages/admin/CaseQueue";
+import BoardGate from "./pages/board/BoardGate";
+import BoardCases from "./pages/board/BoardCases";
+import PortfolioDashboard from "./pages/portfolio/PortfolioDashboard";
 import InspectorGate from "./pages/inspector/InspectorGate";
 import StreetList from "./pages/inspector/StreetList";
 import PropertyList from "./pages/inspector/PropertyList";
@@ -20,6 +24,7 @@ import RoleSignInLanding from "./pages/RoleSignInLanding";
 import PlatformGate from "./pages/platform/PlatformGate";
 import PlatformHoaList from "./pages/platform/PlatformHoaList";
 import PlatformHoaDetail from "./pages/platform/PlatformHoaDetail";
+import PlatformCompanies from "./pages/platform/PlatformCompanies";
 import { MembershipDisplayNameSync } from "./components/MembershipDisplayNameSync";
 import HomeownerGuard from "./components/HomeownerGuard";
 import ClaimProperty from "./pages/portal/ClaimProperty";
@@ -27,6 +32,7 @@ import HomeownerPortal from "./pages/portal/HomeownerPortal";
 import HomeLayout from "./pages/home/HomeLayout";
 import HomeDashboard from "./pages/home/HomeDashboard";
 import InspectionFindings from "./pages/home/InspectionFindings";
+import MyCases from "./pages/home/MyCases";
 import FixPhotos from "./pages/home/FixPhotos";
 import RulesLibrary from "./pages/home/RulesLibrary";
 import Chat from "./pages/home/Chat";
@@ -53,6 +59,7 @@ const App = () => {
           <Route path="/platform" element={<PlatformGate />} />
           <Route path="/platform/hoas" element={<PlatformHoaList />} />
           <Route path="/platform/hoa/:hoaId" element={<PlatformHoaDetail />} />
+          <Route path="/platform/companies" element={<PlatformCompanies />} />
           <Route path="/admin" element={<AdminGate />} />
           <Route
             path="/admin/dashboard"
@@ -94,6 +101,14 @@ const App = () => {
               </RoleGuard>
             }
           />
+          <Route
+            path="/admin/cases"
+            element={
+              <RoleGuard allow="admin">
+                <CaseQueue />
+              </RoleGuard>
+            }
+          />
           {/* Homeowner portal: emailed token link → claim → authenticated /home */}
           <Route path="/portal/:token" element={<ClaimProperty />} />
           <Route path="/portal/:token/guest" element={<HomeownerPortal />} />
@@ -107,11 +122,26 @@ const App = () => {
           >
             <Route index element={<HomeDashboard />} />
             <Route path="inspection" element={<InspectionFindings />} />
+            <Route path="cases" element={<MyCases />} />
             <Route path="fix-photos" element={<FixPhotos />} />
             <Route path="rules" element={<RulesLibrary />} />
             <Route path="chat" element={<Chat />} />
             <Route path="request" element={<ArcRequest />} />
           </Route>
+
+          {/* Management company: portfolio command center (guards itself) */}
+          <Route path="/portfolio" element={<PortfolioDashboard />} />
+
+          {/* Board: read-only case oversight */}
+          <Route path="/board" element={<BoardGate />} />
+          <Route
+            path="/board/cases"
+            element={
+              <RoleGuard allow={["board", "admin"]}>
+                <BoardCases />
+              </RoleGuard>
+            }
+          />
 
           <Route path="/inspector" element={<InspectorGate />} />
           <Route

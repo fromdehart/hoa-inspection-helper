@@ -23,6 +23,7 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MovePhotoDialog } from "@/components/MovePhotoDialog";
+import { CaseList } from "@/components/cases/CaseList";
 
 type AdminFieldsDraft = {
   previousInspectionSummary: string;
@@ -488,6 +489,8 @@ export default function PropertyReview() {
 
           {/* Right: letter + inspection content */}
           <div className="space-y-4 lg:col-span-2">
+            {adminViewer?.features?.includes("cases") && <CaseList propertyId={pid} />}
+
             <div className="rounded-xl border bg-white p-4 space-y-3">
               <h2 className="text-lg font-semibold">Letter Actions</h2>
               <div className="flex gap-2 flex-wrap">

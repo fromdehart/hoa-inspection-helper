@@ -20,6 +20,8 @@ export const sendEmail = internalAction({
     to: v.string(),
     subject: v.string(),
     html: v.string(),
+    /** When set, replies route back (e.g. to the case intake address). */
+    replyTo: v.optional(v.string()),
   },
   handler: async (_ctx, args) => {
     const { apiKey, from } = getConfig();
@@ -34,6 +36,7 @@ export const sendEmail = internalAction({
         to: args.to,
         subject: args.subject,
         html: args.html,
+        ...(args.replyTo ? { replyTo: args.replyTo } : {}),
       });
       if (error) {
         return { success: false as const, error: error.message };
