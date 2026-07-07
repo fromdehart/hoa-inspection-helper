@@ -422,6 +422,11 @@ export default function LetterExport() {
   const [generatingId, setGeneratingId] = useState<string | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
   const [regenerateExisting, setRegenerateExisting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{
+    current: number;
+    total: number;
+    phase: "rendering" | "zipping" | "done";
+  } | null>(null);
   const [photoLightbox, setPhotoLightbox] = useState<{ url: string; title: string } | null>(null);
 
   const reviewRowsRaw = useQuery(api.properties.listLetterReviewRows);
@@ -630,6 +635,7 @@ export default function LetterExport() {
     if (exportTargets.length === 0) return;
     setExportBusy(true);
     setLog("");
+    setExportProgress({ current: 0, total: exportTargets.length, phase: "rendering" });
     const zip = new JSZip();
     try {
       await persistAllDrafts();
@@ -638,7 +644,10 @@ export default function LetterExport() {
       for (let i = 0; i < exportTargets.length; i++) {
         const row = exportTargets[i];
         const html = row.generatedLetterHtml?.trim();
-        if (!html) continue;
+        if (!html) {
+          setExportProgress({ current: i + 1, total: exportTargets.length, phase: "rendering" });
+          continue;
+        }
 
         setLog(`Rendering ${i + 1} / ${exportTargets.length}: ${row.address} (letter + photos)`);
         const { blob, rendered, skipped } = await letterHtmlToPdfBlob(row, html);
@@ -649,14 +658,19 @@ export default function LetterExport() {
             `Rendering ${i + 1} / ${exportTargets.length}: ${row.address} (photos: ${rendered} added, ${skipped} skipped)`,
           );
         }
+        setExportProgress({ current: i + 1, total: exportTargets.length, phase: "rendering" });
+        // Yield to the event loop so the progress bar can repaint between letters.
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
       if (pdfCount === 0) {
         setLog("No letters to export.");
+        setExportProgress(null);
         return;
       }
 
       setLog("Zipping...");
+      setExportProgress({ current: exportTargets.length, total: exportTargets.length, phase: "zipping" });
       const out = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(out);
       const a = document.createElement("a");
@@ -664,10 +678,12 @@ export default function LetterExport() {
       a.download = `happier-block-letters-${new Date().toISOString().slice(0, 10)}.zip`;
       a.click();
       URL.revokeObjectURL(url);
+      setExportProgress({ current: exportTargets.length, total: exportTargets.length, phase: "done" });
       setLog(`Done (${pdfCount} PDFs). Reviewed ${reviewedCount}/${reviewRows.length}.`);
     } catch (e) {
       console.error(e);
       setLog("Error: " + String(e));
+      setExportProgress(null);
     } finally {
       setExportBusy(false);
     }
@@ -903,12 +919,53 @@ export default function LetterExport() {
             <p className="text-sm font-semibold text-gray-800">
               Ready to export: {reviewRowsRaw === undefined ? "..." : exportTargets.length} letter(s)
             </p>
+            {exportProgress && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-medium text-gray-600">
+                  <span>
+                    {exportProgress.phase === "zipping"
+                      ? "Compressing ZIP..."
+                      : exportProgress.phase === "done"
+                        ? "Complete"
+                        : `Rendering PDFs (${exportProgress.current}/${exportProgress.total})`}
+                  </span>
+                  <span>
+                    {Math.round(
+                      (exportProgress.phase === "zipping" || exportProgress.phase === "done"
+                        ? 1
+                        : exportProgress.current / Math.max(1, exportProgress.total)) * 100,
+                    )}
+                    %
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      exportProgress.phase === "done" ? "bg-emerald-500" : "bg-violet-600"
+                    } ${exportProgress.phase === "zipping" ? "animate-pulse" : ""}`}
+                    style={{
+                      width: `${
+                        (exportProgress.phase === "zipping" || exportProgress.phase === "done"
+                          ? 1
+                          : exportProgress.current / Math.max(1, exportProgress.total)) * 100
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
             <Button
               disabled={busy || exportTargets.length === 0}
               onClick={() => void exportZip()}
               className="btn-bounce w-full h-12 text-base font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-lg"
             >
-              {exportBusy ? "Exporting..." : "Download ZIP of PDFs"}
+              {exportBusy
+                ? exportProgress
+                  ? exportProgress.phase === "zipping"
+                    ? "Compressing ZIP..."
+                    : `Exporting ${exportProgress.current}/${exportProgress.total}...`
+                  : "Exporting..."
+                : "Download ZIP of PDFs"}
             </Button>
           </div>
         </div>
