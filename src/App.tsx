@@ -9,7 +9,6 @@ import AdminGate from "./pages/admin/AdminGate";
 import Properties from "./pages/admin/Properties";
 import Walkthrough from "./pages/admin/Walkthrough";
 import Settings from "./pages/admin/Settings";
-import Members from "./pages/admin/Members";
 import PropertyReview from "./pages/admin/PropertyReview";
 import CaseDetailPage from "./pages/admin/CaseDetailPage";
 import LetterExport from "./pages/admin/LetterExport";
@@ -89,14 +88,8 @@ const App = () => {
               </RoleGuard>
             }
           />
-          <Route
-            path="/admin/members"
-            element={
-              <RoleGuard allow="admin">
-                <Members />
-              </RoleGuard>
-            }
-          />
+          {/* Team management now lives in Settings */}
+          <Route path="/admin/members" element={<Navigate to="/admin/settings" replace />} />
           <Route
             path="/admin/property/:propertyId"
             element={

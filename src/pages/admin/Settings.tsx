@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -16,6 +15,9 @@ import {
 } from "@/lib/extractPdfText";
 import { WorkflowEditor } from "@/components/cases/WorkflowEditor";
 import { EmailIntakeSettings } from "@/components/cases/EmailIntakeSettings";
+import AdminShell from "@/components/admin/AdminShell";
+import { ImportExportCard } from "@/components/admin/ImportExportCard";
+import { TeamSection } from "@/components/admin/TeamSection";
 
 /** Convex may store `templateText: ""`; `??` would hide non-empty `parsedText` and leave the editor blank. */
 function editorBodyFromStoredTemplate(doc: { templateText?: string; parsedText?: string } | null | undefined): string {
@@ -26,7 +28,7 @@ function editorBodyFromStoredTemplate(doc: { templateText?: string; parsedText?:
 }
 
 export default function Settings() {
-  const navigate = useNavigate();
+  
   const settingsViewer = useQuery(api.tenancy.viewerContext, {});
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const [templateErr, setTemplateErr] = useState("");
@@ -165,23 +167,17 @@ export default function Settings() {
   }, [arcReviewSettings, reviewPosture, reviewGuidance, showArcOnPropertyPage, setArcReviewSettings]);
 
   return (
-    <div className="min-h-screen bg-[#f8f7ff]">
-      <div className="gradient-admin px-4 pt-8 pb-5">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            className="text-sm text-purple-100 hover:text-white font-medium transition-colors"
-            onClick={() => navigate("/admin/dashboard")}
-          >
-            ← Dashboard
-          </button>
-          <h1 className="font-extrabold text-white text-xl">⚙️ Settings</h1>
-          <div className="w-20" />
+    <AdminShell active="settings">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <h1 className="text-lg font-bold">Settings</h1>
+          <p className="text-xs text-ink-2">
+            Letter template, team, utilities, ARC rules, and reference docs
+          </p>
         </div>
-        <p className="text-purple-200 text-xs mt-2 text-center">Letter templates, ARC rules, and reference docs</p>
-      </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
+        <ImportExportCard hoaSlug={settingsViewer?.hoaSlug} />
+        <TeamSection />
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-lg font-bold text-gray-800">Letter Template</h2>
@@ -495,6 +491,6 @@ export default function Settings() {
           )}
         </section>
       </div>
-    </div>
+    </AdminShell>
   );
 }
