@@ -65,7 +65,7 @@ function PlatformHoaDetailContent() {
     setSaving(true);
     try {
       await setActingHoa({ hoaId: hoaId as Id<"hoas"> });
-      navigate("/admin/dashboard");
+      navigate("/admin/properties");
     } catch (err) {
       flash(String(err));
       setSaving(false);

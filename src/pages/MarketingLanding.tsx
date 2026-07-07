@@ -134,7 +134,7 @@ export default function MarketingLanding() {
   useEffect(() => {
     if (!isLoaded || !isSignedIn || viewer === undefined || companyContext === undefined) return;
     if (viewer?.role === "inspector") navigate("/inspector/streets", { replace: true });
-    else if (viewer?.role === "admin") navigate("/admin/dashboard", { replace: true });
+    else if (viewer?.role === "admin") navigate("/admin/properties", { replace: true });
     else if (viewer?.role === "board") navigate("/board/cases", { replace: true });
     else if (companyContext) navigate("/portfolio", { replace: true });
   }, [isLoaded, isSignedIn, viewer, companyContext, navigate]);
@@ -192,7 +192,7 @@ export default function MarketingLanding() {
                 <button
                   type="button"
                   className="rounded-full border border-white/30 bg-white/10 px-3 py-1 font-semibold text-white hover:bg-white/20 transition-colors"
-                  onClick={() => navigate("/admin/dashboard")}
+                  onClick={() => navigate("/admin/properties")}
                 >
                   Admin dashboard
                 </button>

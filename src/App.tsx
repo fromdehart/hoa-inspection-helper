@@ -1,12 +1,12 @@
 import { useEffect } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import RoleGuard from "./components/RoleGuard";
 import SyncStatusBanner from "./components/SyncStatusBanner";
 import { startSyncManager } from "./offline/syncManager";
 import { initNativeShell } from "./native/bootstrap";
 import Landing from "./pages/Landing";
 import AdminGate from "./pages/admin/AdminGate";
-import Dashboard from "./pages/admin/Dashboard";
+import Properties from "./pages/admin/Properties";
 import Settings from "./pages/admin/Settings";
 import Members from "./pages/admin/Members";
 import PropertyReview from "./pages/admin/PropertyReview";
@@ -62,13 +62,15 @@ const App = () => {
           <Route path="/platform/companies" element={<PlatformCompanies />} />
           <Route path="/admin" element={<AdminGate />} />
           <Route
-            path="/admin/dashboard"
+            path="/admin/properties"
             element={
               <RoleGuard allow="admin">
-                <Dashboard />
+                <Properties />
               </RoleGuard>
             }
           />
+          {/* Legacy dashboard URL — bookmarks and stale links land on Properties */}
+          <Route path="/admin/dashboard" element={<Navigate to="/admin/properties" replace />} />
           <Route
             path="/admin/settings"
             element={

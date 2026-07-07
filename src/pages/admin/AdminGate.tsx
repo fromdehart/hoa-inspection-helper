@@ -31,8 +31,8 @@ export default function AdminGate() {
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !isAdmin) return;
-    authLog("AdminGate", "redirect_dashboard", { to: "/admin/dashboard" });
-    navigate("/admin/dashboard", { replace: true });
+    authLog("AdminGate", "redirect_properties", { to: "/admin/properties" });
+    navigate("/admin/properties", { replace: true });
   }, [isLoaded, isSignedIn, isAdmin, navigate]);
 
   if (!isLoaded) {

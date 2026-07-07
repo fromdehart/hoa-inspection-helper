@@ -44,6 +44,26 @@ export const listByProperty = query({
   },
 });
 
+/** All fix photos awaiting admin review across the HOA (dashboard stat + strips). */
+export const listPendingForHoa = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const fixPhotos = await ctx.db
+      .query("fixPhotos")
+      .withIndex("by_hoa_property", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
+    return fixPhotos
+      .filter((p) => p.verificationStatus === "pending" || p.verificationStatus === "needsReview")
+      .map((p) => ({
+        _id: p._id,
+        propertyId: p.propertyId,
+        publicUrl: p.publicUrl,
+        uploadedAt: p.uploadedAt,
+      }));
+  },
+});
+
 export const listByToken = query({
   args: { token: v.string() },
   handler: async (ctx, args) => {

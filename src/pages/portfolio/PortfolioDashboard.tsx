@@ -38,7 +38,7 @@ function PortfolioContent() {
     setError(null);
     try {
       await setActingHoa({ hoaId });
-      navigate("/admin/dashboard");
+      navigate("/admin/properties");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not open community.");
       setEntering(null);

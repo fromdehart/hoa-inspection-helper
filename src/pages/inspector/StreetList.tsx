@@ -57,7 +57,7 @@ export default function StreetList() {
                       className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-900 hover:bg-gray-100 transition-colors"
                       onClick={() => {
                         setInspectorMenuOpen(false);
-                        navigate("/admin/dashboard");
+                        navigate("/admin/properties");
                       }}
                     >
                       👔 Admin Mode
@@ -81,7 +81,7 @@ export default function StreetList() {
                 <button
                   type="button"
                   className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-                  onClick={() => navigate("/admin/dashboard")}
+                  onClick={() => navigate("/admin/properties")}
                 >
                   👔 Admin Mode
                 </button>
