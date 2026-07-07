@@ -419,6 +419,8 @@ export default function LetterExport() {
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [reviewed, setReviewed] = useState<Record<string, true>>({});
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
   const [regenerateExisting, setRegenerateExisting] = useState(false);
   const [photoLightbox, setPhotoLightbox] = useState<{ url: string; title: string } | null>(null);
 
@@ -538,6 +540,53 @@ export default function LetterExport() {
       setLog(String(e));
     } finally {
       setRegeneratingId(null);
+    }
+  };
+
+  const generateSingleLetter = async (row: ReviewRow) => {
+    setGeneratingId(row._id);
+    setLog("");
+    try {
+      await persistDraftFor(row);
+      const result = await generateLetter({ propertyId: row._id as Id<"properties"> });
+      if (result.ok === false) {
+        setLog(`Skipped ${row.address}: ${result.error}`);
+        return;
+      }
+      await saveGeneratedLetterHtml({ id: row._id as Id<"properties">, html: result.html });
+      setLog(`Generated letter for ${row.address}.`);
+    } catch (e) {
+      console.error(e);
+      setLog("Error: " + String(e));
+    } finally {
+      setGeneratingId(null);
+    }
+  };
+
+  const exportSingleLetter = async (row: ReviewRow) => {
+    const html = row.generatedLetterHtml?.trim();
+    if (!html) {
+      setLog(`No letter generated yet for ${row.address}. Generate it first.`);
+      return;
+    }
+    setExportingId(row._id);
+    setLog("");
+    try {
+      setLog(`Rendering ${row.address} (letter + photos)...`);
+      const { blob, rendered, skipped } = await letterHtmlToPdfBlob(row, html);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sanitizeFilename(row.address)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      const skippedNote = skipped > 0 ? ` (photos: ${rendered} added, ${skipped} skipped)` : "";
+      setLog(`Exported ${row.address}.pdf${skippedNote}`);
+    } catch (e) {
+      console.error(e);
+      setLog("Error: " + String(e));
+    } finally {
+      setExportingId(null);
     }
   };
 
@@ -760,6 +809,31 @@ export default function LetterExport() {
                             onClick={() => void regenerateRow(row)}
                           >
                             {regeneratingId === row._id ? "Regenerating..." : "Regenerate"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="bg-sky-600 hover:bg-sky-700 text-white"
+                            disabled={busy || generatingId === row._id || exportingId === row._id}
+                            onClick={() => void generateSingleLetter(row)}
+                          >
+                            {generatingId === row._id
+                              ? "Generating..."
+                              : row.generatedLetterAt
+                                ? "Regenerate letter"
+                                : "Generate letter"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="bg-violet-600 hover:bg-violet-700 text-white"
+                            disabled={
+                              busy ||
+                              !row.generatedLetterHtml?.trim() ||
+                              generatingId === row._id ||
+                              exportingId === row._id
+                            }
+                            onClick={() => void exportSingleLetter(row)}
+                          >
+                            {exportingId === row._id ? "Exporting..." : "Export letter"}
                           </Button>
                         </div>
 
