@@ -7,6 +7,7 @@ import { initNativeShell } from "./native/bootstrap";
 import Landing from "./pages/Landing";
 import AdminGate from "./pages/admin/AdminGate";
 import Properties from "./pages/admin/Properties";
+import Walkthrough from "./pages/admin/Walkthrough";
 import Settings from "./pages/admin/Settings";
 import Members from "./pages/admin/Members";
 import PropertyReview from "./pages/admin/PropertyReview";
@@ -71,6 +72,14 @@ const App = () => {
           />
           {/* Legacy dashboard URL — bookmarks and stale links land on Properties */}
           <Route path="/admin/dashboard" element={<Navigate to="/admin/properties" replace />} />
+          <Route
+            path="/admin/walkthrough"
+            element={
+              <RoleGuard allow="admin">
+                <Walkthrough />
+              </RoleGuard>
+            }
+          />
           <Route
             path="/admin/settings"
             element={
