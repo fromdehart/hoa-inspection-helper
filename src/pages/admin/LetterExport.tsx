@@ -47,76 +47,263 @@ function normalizeLetterHtmlForRender(html: string): string {
   }
 }
 
-/** Placeholder survives DOMParser/`innerText` so `<br>` can be distinguished from DOCX soft wraps. */
-const BR_PLACEHOLDER = "\uFFF0_LINE_BR_\uFFF1";
+type FontStyle = "normal" | "bold" | "italic" | "bolditalic";
 
-/** Sentinel for breaks that must not be flattened (replaced last). */
-const HARD_BREAK_SENTINEL = "\uFFF2";
+type TextRun = { text: string; style: FontStyle };
 
-function maskBrTags(htmlFrag: string): string {
-  return htmlFrag.replace(/<br\b[^>]*\/?>/gi, BR_PLACEHOLDER);
+type RenderContext = {
+  margin: number;
+  maxW: number;
+  maxH: number;
+  lineHeight: number;
+  fontSize: number;
+  y: number;
+};
+
+const BULLET_GLYPH = "\u2022";
+const BULLET_INDENT = 14;
+const TEXT_INDENT = 28;
+const PHOTO_MAX_EDGE = 1400;
+const PHOTO_JPEG_QUALITY = 0.8;
+
+function resolveFontStyle(el: Element, inherited: FontStyle): FontStyle {
+  const tag = el.tagName.toLowerCase();
+  let style = inherited;
+  if (tag === "strong" || tag === "b") {
+    style = style === "italic" ? "bolditalic" : "bold";
+  } else if (tag === "em" || tag === "i") {
+    style = style === "bold" ? "bolditalic" : "italic";
+  }
+  const styleAttr = el.getAttribute("style") ?? "";
+  if (/font-weight\s*:\s*bold/i.test(styleAttr)) {
+    style = style === "italic" ? "bolditalic" : "bold";
+  }
+  return style;
 }
 
-/**
- * `textContent` keeps literal newlines from DOCX inside one `<p>`; jsPDF treats every `\n`
- * as a hard break (ragged short lines). That is mostly an exporter issue, not the letter
- * template. We mask `<br>`, take `innerText`, flatten orphan single `\n`s, then restore
- * `<br>` line breaks — plus light comma spacing cleanup common in pasted addresses.
- */
-function htmlToPlainText(html: string): string {
-  const normalized = normalizeLetterHtmlForRender(html);
-  try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(maskBrTags(normalized), "text/html");
-    const body = doc.body;
-    if (!body) return normalized.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+function collectRuns(node: Node, inheritedStyle: FontStyle, runs: TextRun[]): void {
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = (node.textContent ?? "").replace(/\u00a0/g, " ");
+    if (text) runs.push({ text, style: inheritedStyle });
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
 
-    let raw = (typeof body.innerText === "string" ? body.innerText : body.textContent) ?? "";
-    raw = raw.replace(/\r/g, "").replace(/\u00a0/g, " ");
-    raw = raw.replaceAll(BR_PLACEHOLDER, HARD_BREAK_SENTINEL);
-    raw = raw.replace(/[ \t]+\n/g, "\n");
-    raw = raw.replace(/\n{3,}/g, "\n\n");
-    // Flatten DOCX-style soft wraps; keep `\n\n` paragraph gaps (prev char must not be `\n`).
-    raw = raw.replace(/([^\n\uFFF2])\n(?!\n)/g, "$1 ");
-    raw = raw.replace(/\s+,/g, ", ");
-    raw = raw.replace(/,\s+/g, ", ");
-    raw = raw.replaceAll(HARD_BREAK_SENTINEL, "\n");
-    raw = raw.replace(/[ \t]{2,}/g, " ");
-    return raw.trim();
-  } catch {
-    return normalized.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const el = node as Element;
+  const tag = el.tagName.toLowerCase();
+  if (tag === "br") {
+    runs.push({ text: "\n", style: inheritedStyle });
+    return;
+  }
+
+  const style = resolveFontStyle(el, inheritedStyle);
+  for (const child of el.childNodes) {
+    collectRuns(child, style, runs);
   }
 }
 
-function renderLetterAsPlainText(pdf: jsPDF, html: string): void {
+function collectRunsFromElement(el: Element): TextRun[] {
+  const runs: TextRun[] = [];
+  for (const child of el.childNodes) {
+    collectRuns(child, "normal", runs);
+  }
+  return mergeRuns(runs);
+}
+
+function mergeRuns(runs: TextRun[]): TextRun[] {
+  const merged: TextRun[] = [];
+  for (const run of runs) {
+    const last = merged[merged.length - 1];
+    if (
+      last &&
+      last.style === run.style &&
+      !last.text.endsWith("\n") &&
+      !run.text.startsWith("\n")
+    ) {
+      last.text += run.text;
+    } else {
+      merged.push({ ...run });
+    }
+  }
+  return merged;
+}
+
+function createRenderContext(pdf: jsPDF): RenderContext {
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const margin = 36;
-  const maxW = pageW - margin * 2;
-  const maxH = pageH - margin * 2;
-  const lineHeight = 16;
-  const text = htmlToPlainText(html) || "No letter content.";
+  return {
+    margin,
+    maxW: pageW - margin * 2,
+    maxH: pageH - margin * 2,
+    lineHeight: 16,
+    fontSize: 12,
+    y: margin + 12,
+  };
+}
 
+function resetPageTextStyle(pdf: jsPDF, ctx: RenderContext): void {
   pdf.setFont("times", "normal");
-  pdf.setFontSize(12);
+  pdf.setFontSize(ctx.fontSize);
   pdf.setTextColor(0, 0, 0);
+}
 
-  const lines = pdf.splitTextToSize(text, maxW) as string[];
-  let y = margin + 12;
-  for (let i = 0; i < lines.length; i++) {
-    if (y > margin + maxH - lineHeight) {
-      pdf.addPage();
-      y = margin + 12;
-      pdf.setFont("times", "normal");
-      pdf.setFontSize(12);
-      pdf.setTextColor(0, 0, 0);
-    }
-    pdf.text(lines[i], margin, y);
-    y += lineHeight;
+function addPdfPage(pdf: jsPDF, ctx: RenderContext): void {
+  pdf.addPage();
+  ctx.y = ctx.margin + 12;
+  resetPageTextStyle(pdf, ctx);
+}
+
+function ensureLineSpace(pdf: jsPDF, ctx: RenderContext): void {
+  if (ctx.y > ctx.margin + ctx.maxH - ctx.lineHeight) {
+    addPdfPage(pdf, ctx);
   }
 }
 
-async function imageUrlToDataUrl(url: string): Promise<string> {
+function renderRunsWrapped(
+  pdf: jsPDF,
+  runs: TextRun[],
+  x: number,
+  maxWidth: number,
+  ctx: RenderContext,
+  options?: { onFirstLine?: () => void },
+): void {
+  let lineParts: Array<{ text: string; style: FontStyle }> = [];
+  let lineWidth = 0;
+  let drewFirstLine = false;
+
+  const flushLine = () => {
+    if (lineParts.length === 0) return;
+    ensureLineSpace(pdf, ctx);
+    if (!drewFirstLine) {
+      options?.onFirstLine?.();
+      drewFirstLine = true;
+    }
+    let drawX = x;
+    for (const part of lineParts) {
+      pdf.setFont("times", part.style);
+      pdf.setFontSize(ctx.fontSize);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(part.text, drawX, ctx.y);
+      drawX += pdf.getTextWidth(part.text);
+    }
+    ctx.y += ctx.lineHeight;
+    lineParts = [];
+    lineWidth = 0;
+  };
+
+  for (const run of runs) {
+    const segments = run.text.split("\n");
+    for (let si = 0; si < segments.length; si++) {
+      if (si > 0) flushLine();
+      const segment = segments[si];
+      if (!segment) continue;
+
+      pdf.setFont("times", run.style);
+      pdf.setFontSize(ctx.fontSize);
+      const words = segment.match(/\S+|\s+/g) ?? [];
+      for (const word of words) {
+        const wordWidth = pdf.getTextWidth(word);
+        if (lineWidth + wordWidth > maxWidth && lineWidth > 0) {
+          flushLine();
+        }
+        if (word.trim() === "" && lineWidth === 0) continue;
+        lineParts.push({ text: word, style: run.style });
+        lineWidth += wordWidth;
+      }
+    }
+  }
+  flushLine();
+}
+
+function isEmptyBlock(el: Element): boolean {
+  return (el.textContent ?? "").replace(/\u00a0/g, " ").trim().length === 0;
+}
+
+function renderParagraph(pdf: jsPDF, el: Element, ctx: RenderContext): void {
+  if (isEmptyBlock(el)) {
+    ctx.y += 8;
+    return;
+  }
+  const runs = collectRunsFromElement(el);
+  renderRunsWrapped(pdf, runs, ctx.margin, ctx.maxW, ctx);
+  ctx.y += 8;
+}
+
+function renderList(pdf: jsPDF, el: Element, ctx: RenderContext): void {
+  const items = Array.from(el.children).filter((child) => child.tagName.toLowerCase() === "li");
+  const textX = ctx.margin + TEXT_INDENT;
+  const textMaxW = ctx.maxW - TEXT_INDENT;
+  const bulletX = ctx.margin + BULLET_INDENT;
+
+  for (const li of items) {
+    if (ctx.y + ctx.lineHeight * 2 > ctx.margin + ctx.maxH) {
+      addPdfPage(pdf, ctx);
+    }
+
+    const runs = collectRunsFromElement(li);
+    let bulletDrawn = false;
+    renderRunsWrapped(pdf, runs, textX, textMaxW, ctx, {
+      onFirstLine: () => {
+        if (bulletDrawn) return;
+        pdf.setFont("times", "normal");
+        pdf.setFontSize(ctx.fontSize);
+        pdf.setTextColor(0, 0, 0);
+        pdf.text(BULLET_GLYPH, bulletX, ctx.y);
+        bulletDrawn = true;
+      },
+    });
+    ctx.y += 6;
+  }
+  ctx.y += 8;
+}
+
+function processBlockElement(pdf: jsPDF, el: Element, ctx: RenderContext): void {
+  const tag = el.tagName.toLowerCase();
+  if (tag === "p") {
+    renderParagraph(pdf, el, ctx);
+    return;
+  }
+  if (tag === "ul" || tag === "ol") {
+    renderList(pdf, el, ctx);
+    return;
+  }
+  if (tag === "div") {
+    for (const child of Array.from(el.children)) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        processBlockElement(pdf, child as Element, ctx);
+      }
+    }
+  }
+}
+
+function renderLetterHtml(pdf: jsPDF, html: string): void {
+  const normalized = normalizeLetterHtmlForRender(html);
+  const ctx = createRenderContext(pdf);
+  resetPageTextStyle(pdf, ctx);
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(normalized, "text/html");
+    const body = doc.body;
+    if (!body) {
+      renderRunsWrapped(pdf, [{ text: "No letter content.", style: "normal" }], ctx.margin, ctx.maxW, ctx);
+      return;
+    }
+
+    for (const child of Array.from(body.children)) {
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        processBlockElement(pdf, child as Element, ctx);
+      }
+    }
+  } catch {
+    renderRunsWrapped(pdf, [{ text: "No letter content.", style: "normal" }], ctx.margin, ctx.maxW, ctx);
+  }
+}
+
+async function imageUrlToDataUrl(
+  url: string,
+): Promise<{ dataUrl: string; width: number; height: number }> {
   const img = new Image();
   img.crossOrigin = "anonymous";
   const loaded = new Promise<void>((resolve, reject) => {
@@ -126,13 +313,22 @@ async function imageUrlToDataUrl(url: string): Promise<string> {
   img.src = url;
   await loaded;
 
+  const longestEdge = Math.max(img.naturalWidth, img.naturalHeight);
+  const scale = longestEdge > PHOTO_MAX_EDGE ? PHOTO_MAX_EDGE / longestEdge : 1;
+  const width = Math.max(1, Math.round(img.naturalWidth * scale));
+  const height = Math.max(1, Math.round(img.naturalHeight * scale));
+
   const canvas = document.createElement("canvas");
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not create canvas context for photo.");
-  ctx.drawImage(img, 0, 0);
-  return canvas.toDataURL("image/jpeg", 0.92);
+  ctx.drawImage(img, 0, 0, width, height);
+  return {
+    dataUrl: canvas.toDataURL("image/jpeg", PHOTO_JPEG_QUALITY),
+    width,
+    height,
+  };
 }
 
 function fitIntoBox(
@@ -190,15 +386,8 @@ async function appendPhotoGridPages(
       const cellY = gridY + r * (cellH + gutter);
       const photo = chunk[j];
       try {
-        const dataUrl = await imageUrlToDataUrl(photo.url);
-        const img = new Image();
-        const loaded = new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = () => reject(new Error(`Image decode failed: ${photo.url}`));
-        });
-        img.src = dataUrl;
-        await loaded;
-        const frame = fitIntoBox(img.naturalWidth, img.naturalHeight, cellX, cellY, cellW, cellH);
+        const { dataUrl, width, height } = await imageUrlToDataUrl(photo.url);
+        const frame = fitIntoBox(width, height, cellX, cellY, cellW, cellH);
         pdf.addImage(dataUrl, "JPEG", frame.x, frame.y, frame.w, frame.h, undefined, "FAST");
         rendered++;
       } catch {
@@ -213,8 +402,8 @@ async function letterHtmlToPdfBlob(
   row: ReviewRow,
   html: string,
 ): Promise<{ blob: Blob; rendered: number; skipped: number }> {
-  const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
-  renderLetterAsPlainText(pdf, html);
+  const pdf = new jsPDF({ unit: "pt", format: "letter", orientation: "portrait", compress: true });
+  renderLetterHtml(pdf, html);
   const { rendered, skipped } = await appendPhotoGridPages(pdf, row);
   return { blob: pdf.output("blob"), rendered, skipped };
 }
