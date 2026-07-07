@@ -13,22 +13,12 @@ import {
   stageDisplay,
   type CaseStatus,
 } from "@/lib/caseUi";
+import { PROPERTY_STATUS_CHIP, lettersToSend } from "@/lib/propertyUi";
 
 type PropertyDoc = Doc<"properties">;
 type CaseRow = Doc<"cases"> & { address: string };
 
 type Filter = "attention" | "openItems" | "letters" | "fixPhotos" | "review" | "inProgress" | null;
-
-const PROPERTY_STATUS_CHIP: Record<PropertyDoc["status"], { label: string; tone: "open" | "wait" | "proc" | "ok" | "mute" }> = {
-  notStarted: { label: "Not started", tone: "mute" },
-  inProgress: { label: "In progress", tone: "wait" },
-  review: { label: "Ready to review", tone: "wait" },
-  complete: { label: "All clear", tone: "ok" },
-};
-
-function lettersToSend(p: PropertyDoc): boolean {
-  return (p.status === "review" || p.status === "complete") && !p.letterSentAt;
-}
 
 export default function Properties() {
   const navigate = useNavigate();

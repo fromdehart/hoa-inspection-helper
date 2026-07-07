@@ -4,26 +4,15 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import AdminShell from "@/components/admin/AdminShell";
-import { Chip, type ChipTone } from "@/components/ui/chip";
+import { Chip } from "@/components/ui/chip";
+import { PROPERTY_STATUS_CHIP, parseFindings } from "@/lib/propertyUi";
 
 type PropertyDoc = Doc<"properties">;
-
-const STATUS_CHIP: Record<PropertyDoc["status"], { label: string; tone: ChipTone }> = {
-  notStarted: { label: "Not started", tone: "mute" },
-  inProgress: { label: "In progress", tone: "wait" },
-  review: { label: "Ready to review", tone: "wait" },
-  complete: { label: "Inspected", tone: "ok" },
-};
 
 const EXPAND_CAP = 10;
 
 function firstBullet(p: PropertyDoc): string | null {
-  const src = p.aiLetterBullets ?? "";
-  const line = src
-    .split("\n")
-    .map((l) => l.replace(/^[-*•]\s*/, "").trim())
-    .find(Boolean);
-  return line ?? null;
+  return parseFindings(p.aiLetterBullets)[0] ?? null;
 }
 
 /** Two-segment season progress bar: green = complete, gold = ready to review. */
@@ -166,7 +155,10 @@ export default function Walkthrough() {
                           <td colSpan={5} className="bg-paper px-3.5 pb-3 pt-0.5">
                             <div className="pl-4">
                               {shown.map((p) => {
-                                const chip = STATUS_CHIP[p.status];
+                                const chip =
+                                  p.status === "complete"
+                                    ? { label: "Inspected", tone: "ok" as const }
+                                    : PROPERTY_STATUS_CHIP[p.status];
                                 const teaser = firstBullet(p);
                                 return (
                                   <div
