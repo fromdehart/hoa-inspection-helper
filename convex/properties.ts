@@ -553,6 +553,8 @@ export const updateAiLetterBullets = mutation({
 export const completeHouseCapture = mutation({
   args: {
     id: v.id("properties"),
+    // "All clear" in the field must not open a case even when benign notes exist.
+    openCase: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
@@ -562,7 +564,7 @@ export const completeHouseCapture = mutation({
     await ctx.db.patch(args.id, {
       status: verified ? "complete" : "review",
     });
-    if (propertyHasInspectorNotesContent(property)) {
+    if ((args.openCase ?? true) && propertyHasInspectorNotesContent(property)) {
       await ensureViolationCaseForInspection(
         ctx,
         property,

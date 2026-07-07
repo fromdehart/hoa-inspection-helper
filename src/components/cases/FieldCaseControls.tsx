@@ -8,8 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCachedQuery } from "@/offline/hooks";
 import { enqueueCaseEvent } from "@/offline/outbox";
 import { syncNow } from "@/offline/syncManager";
-import { StatusChip } from "@/components/ui/status-chip";
-import { CASE_STATUS_CONFIG, stageLabel, type CaseStatus } from "@/lib/caseUi";
+import { Chip } from "@/components/ui/chip";
+import { CASE_STATUS_CHIP, stageDisplay, type CaseStatus } from "@/lib/caseUi";
 
 /**
  * Inspector field controls: open a case / add an observation from the walk.
@@ -64,9 +64,9 @@ export function FieldCaseControls({ propertyId }: { propertyId: Id<"properties">
   };
 
   return (
-    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 space-y-3">
+    <div className="space-y-3 rounded-xl border bg-white px-3.5 py-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-gray-800">🗂️ Cases</h2>
+        <h2 className="text-[12.5px] font-bold">Open items</h2>
         <div className="flex gap-1.5">
           <Button
             size="sm"
@@ -132,19 +132,22 @@ export function FieldCaseControls({ propertyId }: { propertyId: Id<"properties">
       )}
 
       {(cases ?? []).length > 0 ? (
-        <ul className="space-y-1.5">
+        <ul>
           {(cases ?? []).map((c) => (
-            <li key={c._id} className="flex items-center justify-between gap-2 text-sm">
-              <div className="min-w-0">
-                <p className="truncate font-medium text-gray-800">{c.title}</p>
-                <p className="text-xs text-gray-500">{stageLabel(c.stageKey)}</p>
-              </div>
-              <StatusChip config={CASE_STATUS_CONFIG[c.status as CaseStatus]} />
+            <li
+              key={c._id}
+              className="flex items-center gap-2.5 border-t border-border/60 py-2 text-sm first:border-0"
+            >
+              <Chip tone={CASE_STATUS_CHIP[c.status as CaseStatus].tone}>
+                {CASE_STATUS_CHIP[c.status as CaseStatus].label}
+              </Chip>
+              <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{c.title}</p>
+              <p className="text-xs text-ink-2">{stageDisplay(c.stageKey)}</p>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-gray-500">No cases on this property yet.</p>
+        <p className="text-xs text-ink-2">Nothing on file for this household.</p>
       )}
     </div>
   );

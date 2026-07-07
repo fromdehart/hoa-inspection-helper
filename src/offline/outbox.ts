@@ -81,6 +81,18 @@ export async function enqueueCaseEvent(input: {
   return id;
 }
 
+/** Pending (not yet synced) photos for one property — for queued-tile previews. */
+export async function listPendingPhotosForProperty(
+  propertyId: string,
+): Promise<Array<{ id: string; section: string }>> {
+  const rows = await db.outboxPhotos
+    .where("propertyId")
+    .equals(propertyId)
+    .and((r) => r.status !== "done" && r.kind === "inspectorPhoto")
+    .toArray();
+  return rows.map((r) => ({ id: r.id, section: r.section }));
+}
+
 export async function pendingPhotoCount(): Promise<number> {
   return db.outboxPhotos.where("status").notEqual("done").count();
 }

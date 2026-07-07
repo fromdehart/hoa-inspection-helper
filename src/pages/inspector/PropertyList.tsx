@@ -3,13 +3,8 @@ import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { useCachedQuery } from "@/offline/hooks";
-
-const STATUS_DOT: Record<string, string> = {
-  notStarted: "bg-gray-400",
-  inProgress: "bg-amber-400",
-  review: "bg-violet-500",
-  complete: "bg-green-500",
-};
+import { Chip } from "@/components/ui/chip";
+import { PROPERTY_STATUS_CHIP } from "@/lib/propertyUi";
 
 export default function PropertyList() {
   const navigate = useNavigate();
@@ -32,67 +27,70 @@ export default function PropertyList() {
   const hasNotStarted = (data?.properties ?? []).some((p) => p.status === "notStarted");
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#f8f7ff] pb-24">
+    <div className="flex min-h-screen flex-col bg-paper pb-24 text-ink">
       <div
-        className="gradient-inspector sticky top-0 z-50 shrink-0 border-b border-white/15 px-4 pb-5 shadow-md"
-        style={{ paddingTop: "calc(env(safe-area-inset-top) + 2rem)" }}
+        className="sticky top-0 z-50 shrink-0 border-b bg-white"
+        style={{ paddingTop: "env(safe-area-inset-top)" }}
       >
-        <div className="relative z-[1] flex items-center justify-between gap-2 mb-2">
-          <button
-            type="button"
-            className="shrink-0 text-sky-100 hover:text-white text-sm font-medium transition-colors"
-            onClick={() => navigate("/inspector/streets")}
-          >
-            ← Streets
-          </button>
-          <h1 className="min-w-0 flex-1 font-extrabold text-white text-lg truncate text-center px-1">
-            {data?.street.name ?? "Loading…"}
-          </h1>
-          <div className="w-16 shrink-0" aria-hidden />
+        <div className="mx-auto max-w-lg px-4 py-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="shrink-0 text-sm font-semibold text-ink-2 hover:text-ink"
+              onClick={() => navigate("/inspector/streets")}
+            >
+              ‹ Streets
+            </button>
+            <h1 className="min-w-0 flex-1 truncate px-1 text-center text-base font-bold">
+              {data?.street.name ?? "Loading…"}
+            </h1>
+            <div className="w-14 shrink-0" aria-hidden />
+          </div>
+          <p className="mt-1 text-center text-xs text-ink-2">
+            Walk order: odd side (ascending), then even side (descending)
+          </p>
         </div>
-        <p className="text-sky-200 text-xs text-center">
-          Walk order: Odd side (ascending) then Even side (descending)
-        </p>
       </div>
 
-      <div className="relative z-0 max-w-lg mx-auto w-full flex-1 px-4 py-4 space-y-2">
+      <div className="relative z-0 mx-auto w-full max-w-lg flex-1 space-y-2 px-4 py-4">
         {data === undefined && (
-          <div className="text-center py-12">
-            <div className="text-4xl mb-2 animate-spin">🔄</div>
-            <p className="text-gray-400 font-medium">Loading…</p>
-          </div>
+          <p className="py-12 text-center text-sm font-medium text-ink-2">Loading…</p>
         )}
-        {(data?.properties ?? []).map((p) => (
-          <button
-            key={p._id}
-            type="button"
-            className="btn-bounce w-full text-left bg-white rounded-2xl px-4 py-3 flex items-center justify-between shadow-sm border border-gray-100 hover:shadow-md transition-all"
-            onClick={() => navigate(`/inspector/property/${p._id}`)}
-          >
-            <div>
-              <span className="font-bold text-gray-800">{p.houseNumber}</span>
-              <span className="ml-2 text-sm text-gray-500">{p.address}</span>
-            </div>
-            <span className={`w-3 h-3 rounded-full shrink-0 ${STATUS_DOT[p.status]}`} />
-          </button>
-        ))}
+        {(data?.properties ?? []).map((p) => {
+          const chip = PROPERTY_STATUS_CHIP[p.status];
+          return (
+            <button
+              key={p._id}
+              type="button"
+              className="btn-bounce flex w-full items-center justify-between gap-2 rounded-xl border bg-white px-4 py-3 text-left transition-colors hover:border-petrol/40"
+              onClick={() => navigate(`/inspector/property/${p._id}`)}
+            >
+              <div className="min-w-0">
+                <span className="font-bold">{p.houseNumber}</span>
+                <span className="ml-2 truncate text-sm text-ink-2">{p.address}</span>
+              </div>
+              <Chip tone={chip.tone}>{chip.label}</Chip>
+            </button>
+          );
+        })}
         {data && data.properties.length === 0 && (
-          <div className="text-center py-12">
-            <div className="text-4xl mb-2">🏚️</div>
-            <p className="text-gray-400 font-medium">No properties on this street</p>
-          </div>
+          <p className="py-12 text-center text-sm font-medium text-ink-2">
+            No properties on this street
+          </p>
         )}
       </div>
 
       {hasNotStarted && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-white/90 backdrop-blur border-t border-gray-100">
-          <button
-            type="button"
-            className="btn-bounce w-full py-4 rounded-2xl font-bold text-lg gradient-success text-white shadow-lg"
-            onClick={handleStartWalk}
-          >
-            Start Walk → 🚶
-          </button>
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-white/95 p-3 backdrop-blur">
+          <div className="mx-auto max-w-lg">
+            <button
+              type="button"
+              className="btn-bounce w-full rounded-2xl bg-petrol py-3.5 text-base font-bold text-white"
+              onClick={handleStartWalk}
+            >
+              Start walk ▸
+            </button>
+          </div>
         </div>
       )}
     </div>
