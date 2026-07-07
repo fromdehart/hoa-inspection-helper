@@ -8,27 +8,28 @@
 /* HSL channel triplets (no hsl() wrapper) — required for theme colors like bg-background */
 @layer base {
   :root {
-    --background: 0 0% 99.5%;
-    --foreground: 240 10% 3.9%;
+    /* Petrol-on-paper staff palette (design mockups v3) */
+    --background: 60 15% 95%;      /* paper #f4f4f0 */
+    --foreground: 216 18% 16%;     /* ink #222831 */
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 216 18% 16%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --primary-light: 240 5% 18%;
-    --primary-dark: 240 6% 6%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 45%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
+    --popover-foreground: 216 18% 16%;
+    --primary: 189 72% 28%;        /* petrol #146b7a */
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 189 50% 38%;
+    --primary-dark: 189 75% 22%;
+    --secondary: 60 10% 94%;
+    --secondary-foreground: 216 18% 16%;
+    --muted: 60 10% 94%;
+    --muted-foreground: 218 8% 46%; /* ink-2 #6d7480 */
+    --accent: 187 25% 93%;          /* petrol-soft #e9f1f2 */
+    --accent-foreground: 189 72% 28%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 240 5.9% 10%;
+    --border: 53 15% 88%;           /* line #e6e5dd */
+    --input: 53 15% 88%;
+    --ring: 189 72% 28%;
     --radius: 0.5rem;
 
     --sidebar-background: 0 0% 98%;
@@ -63,6 +64,45 @@
     @apply bg-background text-foreground antialiased;
     font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   }
+}
+
+/* Staff design language (mockups v3): calm chips + due-date ink.
+   Red ink is reserved for overdue countdowns and destructive actions only. */
+@layer components {
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 9999px;
+    padding: 2px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .chip::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+  }
+  .chip-open { background: #e9eef7; color: #33619e; }
+  .chip-wait { background: #f5eedd; color: #82631c; }
+  .chip-proc { background: #eeeaf3; color: #61537e; } /* "In process" — never alarm red */
+  .chip-ok   { background: #e5efe8; color: #2c6446; }
+  .chip-mute { background: #edede8; color: #6d7480; }
+
+  .due {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .due-late { color: #b8422c; }
+  .due-soon { color: #96701c; }
+  .due-fine { color: #8b93a0; font-weight: 600; }
 }
 
 /* Landing + marketing utilities (restored from git 3c11e82 — “redesign UI” commit) */

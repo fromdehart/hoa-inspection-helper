@@ -93,6 +93,48 @@ export function stageLabel(stageKey: string): string {
   return STAGE_LABELS[stageKey] ?? stageKey;
 }
 
+/* ---- Staff redesign additions (petrol/paper design language). ----
+   CASE_STATUS_CONFIG above still feeds the homeowner + board surfaces;
+   staff surfaces use these calm-chip mappings instead. */
+
+import type { ChipTone } from "@/components/ui/chip";
+
+export const CASE_STATUS_CHIP: Record<CaseStatus, { label: string; tone: ChipTone }> = {
+  open: { label: "Open", tone: "open" },
+  awaitingHomeowner: { label: "Waiting", tone: "wait" },
+  escalated: { label: "In process", tone: "proc" },
+  resolved: { label: "Resolved", tone: "ok" },
+  closed: { label: "Closed", tone: "mute" },
+};
+
+/** Case statuses that count as "open work" everywhere on staff surfaces. */
+export const OPEN_CASE_STATUSES: ReadonlySet<CaseStatus> = new Set([
+  "open",
+  "awaitingHomeowner",
+  "escalated",
+]);
+
+/** Staff-friendly step names ("Noticed", "Time to fix"…) over workflow stage keys. */
+export const STAGE_DISPLAY: Record<string, string> = {
+  courtesyNotice: "Noticed",
+  curePeriod: "Time to fix",
+  reinspection: "Follow-up",
+  formalWarning: "Follow-up",
+  hearingNotice: "Hearing notice",
+  hearing: "Hearing",
+  fineAssessed: "Fine assessed",
+  resolved: "Resolved",
+  escalatedExternal: "Escalated (external)",
+  submitted: "Received",
+  inReview: "In review",
+  awaitingHomeowner: "Homeowner's turn",
+  closed: "Resolved",
+};
+
+export function stageDisplay(stageKey: string): string {
+  return STAGE_DISPLAY[stageKey] ?? stageLabel(stageKey);
+}
+
 export function formatEventTime(ts: number): string {
   return new Date(ts).toLocaleString(undefined, {
     month: "short",
