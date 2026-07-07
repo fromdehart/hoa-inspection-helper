@@ -11,6 +11,7 @@ import Walkthrough from "./pages/admin/Walkthrough";
 import Settings from "./pages/admin/Settings";
 import Members from "./pages/admin/Members";
 import PropertyReview from "./pages/admin/PropertyReview";
+import CaseDetailPage from "./pages/admin/CaseDetailPage";
 import LetterExport from "./pages/admin/LetterExport";
 import CaseQueue from "./pages/admin/CaseQueue";
 import BoardGate from "./pages/board/BoardGate";
@@ -101,6 +102,14 @@ const App = () => {
             element={
               <RoleGuard allow="admin">
                 <PropertyReview />
+              </RoleGuard>
+            }
+          />
+          <Route
+            path="/admin/property/:propertyId/case/:caseId"
+            element={
+              <RoleGuard allow="admin">
+                <CaseDetailPage />
               </RoleGuard>
             }
           />

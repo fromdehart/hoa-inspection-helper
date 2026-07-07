@@ -56,35 +56,33 @@ export function QuarantineStrip() {
   };
 
   return (
-    <section className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-      <h2 className="mb-1.5 text-xs font-bold uppercase tracking-wide text-amber-800">
-        ✉️ Needs filing ({quarantined.length})
-      </h2>
-      <ul className="space-y-1.5">
+    <section>
+      <ul className="space-y-1">
         {quarantined.map((q) => (
-          <li key={q._id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <div className="min-w-0">
-              <span className="font-semibold text-amber-900">{q.subject || "(no subject)"}</span>{" "}
-              <span className="text-amber-700">from {q.from}</span>
-              {q.aiSummary && <p className="text-xs text-amber-700">{q.aiSummary}</p>}
-            </div>
-            <div className="flex shrink-0 gap-1.5">
+          <li key={q._id} className="border-t border-border/60 py-1.5 text-xs first:border-0">
+            <p className="truncate">
+              <span className="font-semibold">{q.from}</span>
+              <span className="text-ink-2"> — "{q.subject || "(no subject)"}"</span>
+            </p>
+            {q.aiSummary && <p className="truncate text-ink-2">{q.aiSummary}</p>}
+            <div className="mt-1.5 flex gap-1.5">
               <Button
                 size="sm"
                 variant="outline"
+                className="h-6 px-2.5 text-[11.5px]"
                 onClick={() =>
                   setFiling({ id: q._id, from: q.from, subject: q.subject, body: q.textBody })
                 }
               >
-                File
+                File ▸
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-red-600"
+                className="h-6 px-2 text-[11.5px] text-ink-2"
                 onClick={() => void rejectQuarantined({ inboundEmailId: q._id })}
               >
-                Reject
+                Dismiss
               </Button>
             </div>
           </li>

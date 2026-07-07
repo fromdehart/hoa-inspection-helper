@@ -10,7 +10,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
  * cases.getStageOptions (same gate logic the mutation enforces), so disabled
  * entries show exactly why they're blocked.
  */
-export function StageControls({ caseId }: { caseId: Id<"cases"> }) {
+export function StageControls({
+  caseId,
+  section = "all",
+}: {
+  caseId: Id<"cases">;
+  /** Render only the stage ladder, only the notices flow, or both. */
+  section?: "all" | "stages" | "notices";
+}) {
   const stageOptions = useQuery(api.cases.getStageOptions, { caseId });
   const notices = useQuery(api.notices.listForCase, { caseId });
   const transitionStage = useMutation(api.cases.transitionStage);
@@ -65,6 +72,7 @@ export function StageControls({ caseId }: { caseId: Id<"cases"> }) {
 
   return (
     <div className="space-y-4">
+      {section !== "notices" && (
       <div>
         <h3 className="mb-2 text-sm font-semibold">Stage</h3>
         {stageOptions === undefined ? (
@@ -106,7 +114,9 @@ export function StageControls({ caseId }: { caseId: Id<"cases"> }) {
           </ol>
         )}
       </div>
+      )}
 
+      {section !== "stages" && (
       <div>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Notices</h3>
@@ -157,6 +167,7 @@ export function StageControls({ caseId }: { caseId: Id<"cases"> }) {
           </ul>
         )}
       </div>
+      )}
 
       {error && <p className="text-xs text-red-600">{error}</p>}
 
