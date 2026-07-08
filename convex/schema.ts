@@ -116,6 +116,10 @@ export default defineSchema({
     letterPdfFilePath: v.optional(v.string()),
     letterPdfFingerprint: v.optional(v.string()),
     letterPdfRenderedAt: v.optional(v.number()),
+    /** Inspector/admin confirmed this home has no violations; skip letter generation. */
+    noViolationsConfirmed: v.optional(v.boolean()),
+    noViolationsConfirmedAt: v.optional(v.number()),
+    noViolationsConfirmedByClerkUserId: v.optional(v.string()),
   })
     .index("by_street", ["streetId"])
     .index("by_hoa_street", ["hoaId", "streetId"])

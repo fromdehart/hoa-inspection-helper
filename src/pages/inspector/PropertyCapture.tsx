@@ -94,6 +94,7 @@ export default function PropertyCapture() {
   const [aiSectionOpen, setAiSectionOpen] = useState(false);
   const [nextLoading, setNextLoading] = useState(false);
   const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
+  const [togglingNoViolations, setTogglingNoViolations] = useState(false);
   const [aiBulletsDraft, setAiBulletsDraft] = useState("");
   const [aiBulletsSaveState, setAiBulletsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [aiBulletsLastSavedAt, setAiBulletsLastSavedAt] = useState<number | null>(null);
@@ -155,6 +156,7 @@ export default function PropertyCapture() {
   const updateInspectorNotes = useMutation(api.properties.updateInspectorNotes);
   const setInspectionVerification = useMutation(api.properties.setInspectionVerification);
   const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
+  const setNoViolationsConfirmed = useMutation(api.properties.setNoViolationsConfirmed);
   const updatePropertyStatus = useMutation(api.properties.updateStatus);
   const completeHouse = useMutation(api.properties.completeHouseCapture);
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
@@ -899,10 +901,33 @@ export default function PropertyCapture() {
             </button>
             {aiSectionOpen ? (
               <div className="px-3 pb-3 pt-0 space-y-2 border-t border-violet-100/80">
+                <label className="flex items-start gap-2 rounded-xl border border-violet-200 bg-white px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
+                    checked={property?.noViolationsConfirmed === true}
+                    disabled={togglingNoViolations}
+                    onChange={async (e) => {
+                      setTogglingNoViolations(true);
+                      try {
+                        await setNoViolationsConfirmed({ id: pid, confirmed: e.target.checked });
+                      } catch (err) {
+                        console.error(err);
+                        alert(err instanceof Error ? err.message : "Could not update no-violations flag.");
+                      } finally {
+                        setTogglingNoViolations(false);
+                      }
+                    }}
+                  />
+                  <span className="text-sm text-gray-700">
+                    <span className="font-semibold">No violations</span>
+                    <span className="block text-xs text-gray-500">Skip letter for this property.</span>
+                  </span>
+                </label>
                 <div className="flex flex-wrap items-center justify-start gap-2 pt-2">
                   <button
                     type="button"
-                    disabled={aiBulletsBusy || !hasAnyNote}
+                    disabled={aiBulletsBusy || !hasAnyNote || property?.noViolationsConfirmed === true}
                     className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-violet-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-violet-700 transition-colors"
                     onClick={async () => {
                       setAiBulletsBusy(true);
@@ -940,7 +965,10 @@ export default function PropertyCapture() {
                   value={aiBulletsDraft}
                   onChange={(e) => setAiBulletsDraft(e.target.value)}
                   rows={5}
-                  className="w-full text-base px-3 py-2 rounded-xl border border-violet-200 focus:outline-none focus:border-violet-400 resize-y bg-white text-gray-700 transition-colors"
+                  disabled={property?.noViolationsConfirmed === true}
+                  className={`w-full text-base px-3 py-2 rounded-xl border border-violet-200 focus:outline-none focus:border-violet-400 resize-y bg-white text-gray-700 transition-colors ${
+                    property?.noViolationsConfirmed === true ? "opacity-60 cursor-not-allowed" : ""
+                  }`}
                   placeholder="Optional standardized bullet list for letters."
                 />
                 {property?.aiLetterBulletsAt != null ? (

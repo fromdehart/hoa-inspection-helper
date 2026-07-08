@@ -90,6 +90,7 @@ export default function PropertyReview() {
   const [showPreview, setShowPreview] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [aiBulletsBusy, setAiBulletsBusy] = useState(false);
+  const [togglingNoViolations, setTogglingNoViolations] = useState(false);
   const [toast, setToast] = useState("");
   const [editingInspectorNotes, setEditingInspectorNotes] = useState(false);
   const [inspectorNotesFrontDraft, setInspectorNotesFrontDraft] = useState("");
@@ -147,6 +148,7 @@ export default function PropertyReview() {
   const generateAiLetterBullets = useAction(api.inspectionBullets.generateFromInspectorNotes);
   const removePhotoForInspector = useAction(api.photos.removeForInspector);
   const updateAiLetterBullets = useMutation(api.properties.updateAiLetterBullets);
+  const setNoViolationsConfirmed = useMutation(api.properties.setNoViolationsConfirmed);
   const arcReviewSettings = useQuery(api.arcReviewSettings.get, {});
   const showArcApplicationSection = arcReviewSettings?.showArcApplicationOnPropertyPage ?? false;
   const arcRefDocs = useQuery(api.arcReferenceDocs.list, showArcApplicationSection ? {} : "skip");
@@ -490,11 +492,45 @@ export default function PropertyReview() {
           <div className="space-y-4 lg:col-span-2">
             <div className="rounded-xl border bg-white p-4 space-y-3">
               <h2 className="text-lg font-semibold">Letter Actions</h2>
+              <label className="flex items-start gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300"
+                  checked={property?.noViolationsConfirmed === true}
+                  disabled={togglingNoViolations}
+                  onChange={async (e) => {
+                    setTogglingNoViolations(true);
+                    try {
+                      await setNoViolationsConfirmed({ id: pid, confirmed: e.target.checked });
+                      showToast(
+                        e.target.checked
+                          ? "Marked as no violations — letter not needed"
+                          : "No-violations flag cleared",
+                      );
+                    } catch (err) {
+                      showToast(err instanceof Error ? err.message : "Could not update no-violations flag");
+                    } finally {
+                      setTogglingNoViolations(false);
+                    }
+                  }}
+                />
+                <span className="text-sm text-gray-700">
+                  <span className="font-semibold">No violations</span>
+                  <span className="block text-xs text-muted-foreground">Skip letter for this property.</span>
+                </span>
+              </label>
               <div className="flex gap-2 flex-wrap">
-                <Button onClick={handleGenerate} disabled={generating}>
+                <Button
+                  onClick={handleGenerate}
+                  disabled={generating || property?.noViolationsConfirmed === true}
+                >
                   {generating ? "Generating…" : "Generate Letter"}
                 </Button>
-                <Button variant="outline" onClick={handleLoadStoredLetter} disabled={!storedLetter?.html}>
+                <Button
+                  variant="outline"
+                  onClick={handleLoadStoredLetter}
+                  disabled={!storedLetter?.html || property?.noViolationsConfirmed === true}
+                >
                   View Letter
                 </Button>
               </div>
@@ -930,7 +966,7 @@ export default function PropertyReview() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    disabled={aiBulletsBusy || !hasAnyInspectorNote}
+                    disabled={aiBulletsBusy || !hasAnyInspectorNote || property.noViolationsConfirmed === true}
                     onClick={async () => {
                       setAiBulletsBusy(true);
                       try {
@@ -951,7 +987,8 @@ export default function PropertyReview() {
                   value={aiBulletsDraft}
                   onChange={(e) => setAiBulletsDraft(e.target.value)}
                   rows={5}
-                  className="text-sm"
+                  disabled={property.noViolationsConfirmed === true}
+                  className={`text-sm ${property.noViolationsConfirmed === true ? "opacity-60 cursor-not-allowed" : ""}`}
                   placeholder="Generate summarized inspection notes, then edit as needed."
                 />
                 <p className="text-xs text-muted-foreground min-h-[1rem]">

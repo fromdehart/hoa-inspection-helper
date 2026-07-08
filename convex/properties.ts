@@ -15,6 +15,11 @@ import {
   resolveSectionInputs,
 } from "./lib/inspectorNotes";
 import { propertyStatusValidator } from "./lib/propertyStatus";
+import {
+  hasLetterBullets,
+  isLetterWorkflowReady,
+  isNoViolationsConfirmed,
+} from "./lib/letterWorkflow";
 
 export const list = query({
   args: {
@@ -723,6 +728,9 @@ export const listLetterReviewRows = query({
           inspectorNotesSide: p.inspectorNotesSide ?? "",
           inspectorNotesBack: p.inspectorNotesBack ?? "",
           originalInspectorNotes,
+          status: p.status,
+          noViolationsConfirmed: p.noViolationsConfirmed === true,
+          isLetterWorkflowReady: isLetterWorkflowReady(p),
           photos: sortedPhotos,
         };
       }),
@@ -732,6 +740,149 @@ export const listLetterReviewRows = query({
       if (a.houseNumber !== b.houseNumber) return a.houseNumber - b.houseNumber;
       return a.address.localeCompare(b.address);
     });
+  },
+});
+
+/** Inspector/admin: confirm a home has no violations and skip letter generation. */
+export const setNoViolationsConfirmed = mutation({
+  args: { id: v.id("properties"), confirmed: v.boolean() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) {
+      throw new Error("Property not found");
+    }
+    if (args.confirmed) {
+      await ctx.db.patch(args.id, {
+        noViolationsConfirmed: true,
+        noViolationsConfirmedAt: Date.now(),
+        noViolationsConfirmedByClerkUserId: viewer.clerkUserId,
+      });
+    } else {
+      await ctx.db.patch(args.id, {
+        noViolationsConfirmed: undefined,
+        noViolationsConfirmedAt: undefined,
+        noViolationsConfirmedByClerkUserId: undefined,
+      });
+    }
+    return null;
+  },
+});
+
+const streetMarkCompleteReadinessValidator = v.object({
+  streetId: v.id("streets"),
+  streetName: v.string(),
+  canMarkComplete: v.boolean(),
+  totalOnStreet: v.number(),
+  withLetters: v.number(),
+  noViolations: v.number(),
+  notReadyCount: v.number(),
+  notReadyAddresses: v.array(v.string()),
+});
+
+/** Admin letter export: per-street readiness for bulk mark-complete. */
+export const listStreetMarkCompleteReadiness = query({
+  args: {},
+  returns: v.array(streetMarkCompleteReadinessValidator),
+  handler: async (ctx) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const streets = await ctx.db
+      .query("streets")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
+
+    const rows = await Promise.all(
+      streets.map(async (street) => {
+        const properties = await ctx.db
+          .query("properties")
+          .withIndex("by_hoa_street", (q) =>
+            q.eq("hoaId", viewer.hoaId).eq("streetId", street._id),
+          )
+          .collect();
+
+        let withLetters = 0;
+        let noViolations = 0;
+        let notReadyCount = 0;
+        const notReadyAddresses: string[] = [];
+        let canMarkComplete = properties.length > 0;
+
+        for (const property of properties) {
+          if (isNoViolationsConfirmed(property)) {
+            noViolations++;
+          } else if (hasLetterBullets(property)) {
+            withLetters++;
+          } else {
+            canMarkComplete = false;
+            notReadyCount++;
+            notReadyAddresses.push(property.address);
+          }
+        }
+
+        return {
+          streetId: street._id,
+          streetName: street.name,
+          canMarkComplete,
+          totalOnStreet: properties.length,
+          withLetters,
+          noViolations,
+          notReadyCount,
+          notReadyAddresses,
+        };
+      }),
+    );
+
+    return rows.sort((a, b) => a.streetName.localeCompare(b.streetName));
+  },
+});
+
+/** Admin: mark every letter-workflow-ready property on a street as complete. */
+export const markStreetLetterReviewComplete = mutation({
+  args: { streetId: v.id("streets") },
+  returns: v.object({
+    updated: v.number(),
+    alreadyComplete: v.number(),
+    skippedNoViolations: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const street = await ctx.db.get(args.streetId);
+    if (!street || street.hoaId !== viewer.hoaId) throw new Error("Street not found");
+
+    const properties = await ctx.db
+      .query("properties")
+      .withIndex("by_hoa_street", (q) =>
+        q.eq("hoaId", viewer.hoaId).eq("streetId", args.streetId),
+      )
+      .collect();
+
+    const notReady = properties
+      .filter((property) => !isLetterWorkflowReady(property))
+      .map((property) => property.address);
+    if (properties.length === 0) {
+      throw new Error(`No properties found on ${street.name}.`);
+    }
+    if (notReady.length > 0) {
+      throw new Error(
+        `${notReady.length} propert${notReady.length === 1 ? "y" : "ies"} on ${street.name} still need letter bullets or a no-violations confirmation.`,
+      );
+    }
+
+    let updated = 0;
+    let alreadyComplete = 0;
+    let skippedNoViolations = 0;
+
+    for (const property of properties) {
+      if (isNoViolationsConfirmed(property)) skippedNoViolations++;
+      if (property.status === "complete") {
+        alreadyComplete++;
+        continue;
+      }
+      await ctx.db.patch(property._id, { status: "complete" });
+      updated++;
+    }
+
+    return { updated, alreadyComplete, skippedNoViolations };
   },
 });
 
