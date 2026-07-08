@@ -112,6 +112,10 @@ export default defineSchema({
     aiLetterBulletsAt: v.optional(v.number()),
     generatedLetterHtml: v.optional(v.string()),
     generatedLetterAt: v.optional(v.number()),
+    letterPdfUrl: v.optional(v.string()),
+    letterPdfFilePath: v.optional(v.string()),
+    letterPdfFingerprint: v.optional(v.string()),
+    letterPdfRenderedAt: v.optional(v.number()),
   })
     .index("by_street", ["streetId"])
     .index("by_hoa_street", ["hoaId", "streetId"])

@@ -1,5 +1,6 @@
 const BASE = import.meta.env.VITE_UPLOAD_SERVER_URL ?? "http://localhost:3001";
 const UPLOAD_TOKEN = import.meta.env.VITE_UPLOAD_TOKEN as string | undefined;
+const UPLOAD_DELETE_TOKEN = import.meta.env.VITE_UPLOAD_DELETE_TOKEN as string | undefined;
 
 async function uploadToSection(propertyId: string, section: string, file: File) {
   const fd = new FormData();
@@ -42,4 +43,29 @@ export async function uploadArcReferenceFile(file: File) {
 /** Per-property ARC application attachments. */
 export async function uploadArcApplicationFile(propertyId: string, file: File) {
   return uploadToSection(propertyId, "arc-application", file);
+}
+
+/** Rendered HOA letter PDF for a property (stored under uploads/<propertyId>/letters/). */
+export async function uploadLetterPdf(propertyId: string, file: File) {
+  return uploadToSection(propertyId, "letters", file);
+}
+
+/** Best-effort delete of a prior upload; no-op when VITE_UPLOAD_DELETE_TOKEN is unset. */
+export async function deleteUploadedFile(filePath: string): Promise<void> {
+  if (!UPLOAD_DELETE_TOKEN) return;
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/api/delete-file`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Upload-Delete-Token": UPLOAD_DELETE_TOKEN,
+      },
+      body: JSON.stringify({ filePath }),
+    });
+  } catch {
+    throw new Error(`Upload server not reachable at ${BASE}`);
+  }
+  if (res.status === 204 || res.ok) return;
+  throw new Error(`Delete failed: ${res.status}`);
 }

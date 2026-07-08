@@ -577,6 +577,28 @@ export const saveGeneratedLetterHtml = mutation({
   },
 });
 
+/** Persist cached letter PDF metadata after client render + VPS upload. */
+export const saveLetterPdfMeta = mutation({
+  args: {
+    id: v.id("properties"),
+    url: v.string(),
+    filePath: v.string(),
+    fingerprint: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const viewer = await requireViewerRole(ctx, ["admin"]);
+    const property = await ctx.db.get(args.id);
+    if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) throw new Error("Property not found");
+    await ctx.db.patch(args.id, {
+      letterPdfUrl: args.url,
+      letterPdfFilePath: args.filePath,
+      letterPdfFingerprint: args.fingerprint,
+      letterPdfRenderedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
 /** Save notes from DB, persist generated letter HTML (sync merge, no image AI). Status: complete if verified, else review. */
 export const completeHouseAndSaveLetter = mutation({
   args: {
@@ -674,6 +696,7 @@ export const listLetterReviewRows = query({
             section: photo.section,
             uploadedAt: photo.uploadedAt,
             url: photo.publicUrl ?? photo.thumbnailPublicUrl ?? "",
+            thumbnailUrl: photo.thumbnailPublicUrl ?? photo.publicUrl ?? "",
           }))
           .filter((photo) => photo.url.length > 0);
         const originalInspectorNotes =
@@ -692,6 +715,13 @@ export const listLetterReviewRows = query({
           aiLetterBullets: p.aiLetterBullets ?? "",
           generatedLetterHtml: p.generatedLetterHtml ?? null,
           generatedLetterAt: p.generatedLetterAt ?? null,
+          letterPdfUrl: p.letterPdfUrl ?? null,
+          letterPdfFilePath: p.letterPdfFilePath ?? null,
+          letterPdfFingerprint: p.letterPdfFingerprint ?? null,
+          letterPdfRenderedAt: p.letterPdfRenderedAt ?? null,
+          inspectorNotesFront: p.inspectorNotesFront ?? "",
+          inspectorNotesSide: p.inspectorNotesSide ?? "",
+          inspectorNotesBack: p.inspectorNotesBack ?? "",
           originalInspectorNotes,
           photos: sortedPhotos,
         };
