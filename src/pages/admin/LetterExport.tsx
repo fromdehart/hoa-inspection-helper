@@ -1284,14 +1284,14 @@ export default function LetterExport() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="font-semibold text-gray-800">AI Letter Bullet Points</h3>
-                        <div className="flex items-center gap-2">
-                          {(saveStates[row._id] && saveStates[row._id] !== "idle") ? (
-                            <span className="text-xs text-gray-500">{saveStates[row._id]}</span>
-                          ) : null}
-                          {!row.noViolationsConfirmed ? (
-                            <>
+                      {!row.noViolationsConfirmed ? (
+                        <>
+                          <div className="flex items-center justify-between gap-2">
+                            <h3 className="font-semibold text-gray-800">AI Letter Bullet Points</h3>
+                            <div className="flex items-center gap-2">
+                              {(saveStates[row._id] && saveStates[row._id] !== "idle") ? (
+                                <span className="text-xs text-gray-500">{saveStates[row._id]}</span>
+                              ) : null}
                               <button
                                 type="button"
                                 title="View letter"
@@ -1318,26 +1318,24 @@ export default function LetterExport() {
                                   <Download className="h-4 w-4" />
                                 )}
                               </button>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                      <textarea
-                        value={rowDraft}
-                        onChange={(e) => {
-                          setDrafts((d) => ({
-                            ...d,
-                            [row._id]: e.target.value,
-                          }));
-                          scheduleBulletAutosave(row);
-                        }}
-                        onBlur={() => void flushBulletAutosave(row).catch((e) => setLog(String(e)))}
-                        rows={10}
-                        disabled={row.noViolationsConfirmed || busy}
-                        className={`w-full text-sm px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-violet-400 resize-y ${
-                          row.noViolationsConfirmed ? "bg-gray-100 text-gray-500 cursor-not-allowed" : ""
-                        }`}
-                      />
+                            </div>
+                          </div>
+                          <textarea
+                            value={rowDraft}
+                            onChange={(e) => {
+                              setDrafts((d) => ({
+                                ...d,
+                                [row._id]: e.target.value,
+                              }));
+                              scheduleBulletAutosave(row);
+                            }}
+                            onBlur={() => void flushBulletAutosave(row).catch((e) => setLog(String(e)))}
+                            rows={10}
+                            disabled={busy}
+                            className="w-full text-sm px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-violet-400 resize-y"
+                          />
+                        </>
+                      ) : null}
 
                       <details className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
                         <summary className="cursor-pointer text-sm font-medium text-gray-700 select-none">
