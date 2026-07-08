@@ -672,7 +672,7 @@ export const getLetterHtml = query({
   },
 });
 
-/** Admin letter review: all review/complete properties with bullets, letter status, notes, and photos. */
+/** Admin letter review: all properties with bullets, letter status, notes, and photos. */
 export const listLetterReviewRows = query({
   args: {},
   handler: async (ctx) => {
@@ -687,9 +687,8 @@ export const listLetterReviewRows = query({
       .collect();
     const streetNameById = new Map(streets.map((s) => [s._id, s.name]));
 
-    const eligible = all.filter((p) => p.status === "review" || p.status === "complete");
     const rows = await Promise.all(
-      eligible.map(async (p) => {
+      all.map(async (p) => {
         const photos = await ctx.db
           .query("photos")
           .withIndex("by_hoa_property", (q) => q.eq("hoaId", viewer.hoaId).eq("propertyId", p._id))

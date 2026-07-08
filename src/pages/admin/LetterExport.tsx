@@ -21,6 +21,8 @@ import { jsPDF } from "jspdf";
 import JSZip from "jszip";
 import { deleteUploadedFile, uploadLetterPdf } from "@/lib/uploadClient";
 
+type PropertyStatus = "notStarted" | "inProgress" | "review" | "complete";
+
 type ReviewRow = {
   _id: string;
   address: string;
@@ -38,7 +40,7 @@ type ReviewRow = {
   inspectorNotesSide: string;
   inspectorNotesBack: string;
   originalInspectorNotes: string;
-  status: "review" | "complete";
+  status: PropertyStatus;
   noViolationsConfirmed: boolean;
   isLetterWorkflowReady: boolean;
   photos: Array<{
@@ -48,6 +50,20 @@ type ReviewRow = {
     url: string;
     thumbnailUrl: string;
   }>;
+};
+
+const STATUS_BADGE: Record<PropertyStatus, string> = {
+  notStarted: "text-slate-700 bg-slate-100 border-slate-200",
+  inProgress: "text-amber-800 bg-amber-50 border-amber-200",
+  review: "text-violet-800 bg-violet-50 border-violet-200",
+  complete: "text-emerald-800 bg-emerald-50 border-emerald-200",
+};
+
+const STATUS_LABEL: Record<PropertyStatus, string> = {
+  notStarted: "Not started",
+  inProgress: "In progress",
+  review: "Review",
+  complete: "Complete",
 };
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -1212,6 +1228,11 @@ export default function LetterExport() {
                       <h2 className="text-lg font-bold text-gray-800">{row.address}</h2>
                     </div>
                     <div className="flex items-center gap-2">
+                      <span
+                        className={`text-xs font-medium border px-2 py-1 rounded-full ${STATUS_BADGE[row.status]}`}
+                      >
+                        {STATUS_LABEL[row.status]}
+                      </span>
                       {row.noViolationsConfirmed ? (
                         <span className="text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2 py-1 rounded-full">
                           No violations
@@ -1420,7 +1441,7 @@ export default function LetterExport() {
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-sm text-gray-500">
             {reviewRowsRaw === undefined
               ? "Loading properties..."
-              : "No properties in review or complete status available for letter workflow."}
+              : "No properties available for letter workflow."}
           </div>
         )}
       </div>
