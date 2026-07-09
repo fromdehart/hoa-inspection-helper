@@ -1,7 +1,7 @@
 import { mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { buildLetterHtmlSync, DEFAULT_LETTER_TEMPLATE } from "./letterBody";
+import { buildLetterHtmlSync, DEFAULT_LETTER_TEMPLATE, DEFAULT_NO_VIOLATIONS_LETTER_TEMPLATE } from "./letterBody";
 
 const DEMO_SLUG = "demo-happier-block";
 const DEMO_NAME = "Demo HOA (Happier Block)";
@@ -123,6 +123,62 @@ async function ensureHoaTemplates(ctx: MutationCtx, hoaId: Id<"hoas">, now: numb
     reportCreated++;
   }
   return { letterCreated, reportCreated };
+}
+
+async function ensureNoViolationsLetterTemplate(ctx: MutationCtx, hoaId: Id<"hoas">, now: number) {
+  const existing = await ctx.db
+    .query("letterTemplateDocs")
+    .withIndex("by_hoa_status_variant", (q) =>
+      q.eq("hoaId", hoaId).eq("status", "active").eq("variant", "noViolations"),
+    )
+    .first();
+  const templateText = DEFAULT_NO_VIOLATIONS_LETTER_TEMPLATE;
+
+  if (existing?.templateText?.trim()) {
+    return { noViolationsTemplateCreated: false as const };
+  }
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      templateText,
+      parsedText: existing.parsedText?.trim() ? existing.parsedText : templateText,
+      updatedAt: now,
+    });
+    return { noViolationsTemplateBackfilled: true as const };
+  }
+
+  await ctx.db.insert("letterTemplateDocs", {
+    hoaId,
+    fileName: "default-no-violations-letter.txt",
+    fileType: "docx",
+    sourcePublicUrl: "",
+    sourceFilePath: "",
+    parsedText: templateText,
+    templateText,
+    blocks: [],
+    detection: {
+      date: undefined,
+      recipientName: undefined,
+      recipientStreet: undefined,
+      recipientCityStateZip: undefined,
+      maintenanceStart: undefined,
+      maintenanceEnd: undefined,
+    },
+    mapping: {
+      date: undefined,
+      recipientName: undefined,
+      recipientStreet: undefined,
+      recipientCityStateZip: undefined,
+      maintenanceStart: undefined,
+      maintenanceEnd: undefined,
+    },
+    variant: "noViolations",
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+    activatedAt: now,
+  });
+  return { noViolationsTemplateCreated: true as const };
 }
 
 async function ensureHoaAiConfig(ctx: MutationCtx, hoaId: Id<"hoas">, now: number) {
@@ -320,6 +376,7 @@ export const seedDemoHappierBlock = mutation({
     }
 
     const tpl = await ensureHoaTemplates(ctx, hoa._id, now);
+    const noViolationsTpl = await ensureNoViolationsLetterTemplate(ctx, hoa._id, now);
     const ai = await ensureHoaAiConfig(ctx, hoa._id, now);
     const enrich = await enrichDemoProperties(ctx, hoa._id, now);
 
@@ -341,6 +398,7 @@ export const seedDemoHappierBlock = mutation({
       propertiesCreated,
       membership,
       templates: tpl,
+      noViolationsTemplate: noViolationsTpl,
       aiConfig: ai,
       enrich,
       warning:

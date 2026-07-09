@@ -742,7 +742,7 @@ export const listLetterReviewRows = query({
   },
 });
 
-/** Inspector/admin: confirm a home has no violations and skip letter generation. */
+/** Inspector/admin: confirm a home has no violations (uses no-violations letter template). */
 export const setNoViolationsConfirmed = mutation({
   args: { id: v.id("properties"), confirmed: v.boolean() },
   returns: v.null(),
@@ -752,17 +752,27 @@ export const setNoViolationsConfirmed = mutation({
     if (!property || !property.hoaId || property.hoaId !== viewer.hoaId) {
       throw new Error("Property not found");
     }
+    const clearGeneratedLetter = {
+      generatedLetterHtml: undefined,
+      generatedLetterAt: undefined,
+      letterPdfUrl: undefined,
+      letterPdfFilePath: undefined,
+      letterPdfFingerprint: undefined,
+      letterPdfRenderedAt: undefined,
+    };
     if (args.confirmed) {
       await ctx.db.patch(args.id, {
         noViolationsConfirmed: true,
         noViolationsConfirmedAt: Date.now(),
         noViolationsConfirmedByClerkUserId: viewer.clerkUserId,
+        ...clearGeneratedLetter,
       });
     } else {
       await ctx.db.patch(args.id, {
         noViolationsConfirmed: undefined,
         noViolationsConfirmedAt: undefined,
         noViolationsConfirmedByClerkUserId: undefined,
+        ...clearGeneratedLetter,
       });
     }
     return null;

@@ -504,7 +504,7 @@ export default function PropertyReview() {
                       await setNoViolationsConfirmed({ id: pid, confirmed: e.target.checked });
                       showToast(
                         e.target.checked
-                          ? "Marked as no violations — letter not needed"
+                          ? "Marked as no violations — use no-violations letter template"
                           : "No-violations flag cleared",
                       );
                     } catch (err) {
@@ -514,22 +514,16 @@ export default function PropertyReview() {
                     }
                   }}
                 />
-                <span className="text-sm text-gray-700">
-                  <span className="font-semibold">No violations</span>
-                  <span className="block text-xs text-muted-foreground">Skip letter for this property.</span>
-                </span>
+                <span className="text-sm text-gray-700 font-semibold">No violations</span>
               </label>
               <div className="flex gap-2 flex-wrap">
-                <Button
-                  onClick={handleGenerate}
-                  disabled={generating || property?.noViolationsConfirmed === true}
-                >
+                <Button onClick={handleGenerate} disabled={generating}>
                   {generating ? "Generating…" : "Generate Letter"}
                 </Button>
                 <Button
                   variant="outline"
                   onClick={handleLoadStoredLetter}
-                  disabled={!storedLetter?.html || property?.noViolationsConfirmed === true}
+                  disabled={!storedLetter?.html}
                 >
                   View Letter
                 </Button>

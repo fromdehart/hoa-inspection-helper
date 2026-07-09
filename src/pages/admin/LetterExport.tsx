@@ -80,8 +80,8 @@ const AUTOSAVE_DELAY_MS = 800;
 /** Bypass PDF cache until cache invalidation is wired to bullet edits. */
 const FORCE_PDF_RERENDER = true;
 
-function rowsNeedingLetters(rows: ReviewRow[]): ReviewRow[] {
-  return rows.filter((row) => !row.noViolationsConfirmed);
+function exportableRows(rows: ReviewRow[]): ReviewRow[] {
+  return rows.filter((row) => row.isLetterWorkflowReady);
 }
 
 function seedNotesDraft(row: ReviewRow): NotesDraft {
@@ -558,7 +558,12 @@ function computeLetterFingerprint(row: ReviewRow): string {
     .map((photo) => `${photo._id}:${photo.uploadedAt}`)
     .sort()
     .join("|");
-  return [PDF_RENDER_VERSION, row.generatedLetterAt ?? 0, photoParts].join("::");
+  return [
+    PDF_RENDER_VERSION,
+    row.noViolationsConfirmed ? "noViolations" : "violation",
+    row.generatedLetterAt ?? 0,
+    photoParts,
+  ].join("::");
 }
 
 type LetterPdfResult = {
@@ -698,6 +703,12 @@ export default function LetterExport() {
     [selectedStreetId, streetGroups],
   );
 
+  const exportableReviewRows = useMemo(() => exportableRows(reviewRows), [reviewRows]);
+  const exportableActiveStreetRows = useMemo(
+    () => exportableRows(activeStreetRows),
+    [activeStreetRows],
+  );
+
   useEffect(() => {
     if (reviewRows.length === 0) return;
     setDrafts((prev) => {
@@ -817,14 +828,13 @@ export default function LetterExport() {
   );
 
   const regenerateFreshLetterHtml = useCallback(
-    async (row: ReviewRow): Promise<string | null> => {
+    async (row: ReviewRow): Promise<{ html: string } | { error: string }> => {
       const result = await generateLetter({ propertyId: row._id as Id<"properties"> });
       if (result.ok === false) {
-        setLog(`Skipped ${row.address}: ${result.error}`);
-        return null;
+        return { error: result.error };
       }
       await saveGeneratedLetterHtml({ id: row._id as Id<"properties">, html: result.html });
-      return result.html;
+      return { html: result.html };
     },
     [generateLetter, saveGeneratedLetterHtml],
   );
@@ -847,20 +857,19 @@ export default function LetterExport() {
   };
 
   const downloadSingleLetter = async (row: ReviewRow) => {
-    if (row.noViolationsConfirmed) {
-      setLog(`Skipping ${row.address} — no violations confirmed.`);
-      return;
-    }
     setExportingId(row._id);
     setLog("");
     try {
       await flushRowDrafts(row);
       setLog(`Generating letter for ${row.address}...`);
-      const html = await regenerateFreshLetterHtml(row);
-      if (!html) return;
+      const letterResult = await regenerateFreshLetterHtml(row);
+      if ("error" in letterResult) {
+        setLog(`Skipped ${row.address}: ${letterResult.error}`);
+        return;
+      }
 
       setLog(`Rendering PDF for ${row.address}...`);
-      const { blob, rendered, skipped } = await getLetterPdfBlob(row, html, {
+      const { blob, rendered, skipped } = await getLetterPdfBlob(row, letterResult.html, {
         forceRerender: FORCE_PDF_RERENDER || forceRerenderPdfs,
         saveLetterPdfMeta,
       });
@@ -881,18 +890,17 @@ export default function LetterExport() {
   };
 
   const viewSingleLetter = async (row: ReviewRow) => {
-    if (row.noViolationsConfirmed) {
-      setLog(`Skipping ${row.address} — no violations confirmed.`);
-      return;
-    }
     setViewingId(row._id);
     setLog("");
     try {
       await flushRowDrafts(row);
       setLog(`Generating preview for ${row.address}...`);
-      const html = await regenerateFreshLetterHtml(row);
-      if (!html) return;
-      setPreviewRow({ address: row.address, html });
+      const letterResult = await regenerateFreshLetterHtml(row);
+      if ("error" in letterResult) {
+        setLog(`Skipped ${row.address}: ${letterResult.error}`);
+        return;
+      }
+      setPreviewRow({ address: row.address, html: letterResult.html });
       setLog(`Preview ready for ${row.address}.`);
     } catch (e) {
       console.error(e);
@@ -903,7 +911,7 @@ export default function LetterExport() {
   };
 
   const exportZip = async (rows: ReviewRow[], zipLabel: string) => {
-    const exportRows = rowsNeedingLetters(rows);
+    const exportRows = exportableRows(rows);
     if (exportRows.length === 0) {
       setLog("No letters to export.");
       return;
@@ -920,15 +928,16 @@ export default function LetterExport() {
         const row = exportRows[i];
         await flushRowDrafts(row);
         setLog(`Generating letter ${i + 1} / ${exportRows.length}: ${row.address}`);
-        const html = await regenerateFreshLetterHtml(row);
-        if (!html) {
-          skipped.push({ address: row.address, error: "Letter generation failed" });
+        const letterResult = await regenerateFreshLetterHtml(row);
+        if ("error" in letterResult) {
+          setLog(`Skipped ${row.address}: ${letterResult.error}`);
+          skipped.push({ address: row.address, error: letterResult.error });
           setExportProgress({ current: i + 1, total: exportRows.length, phase: "generating" });
           await new Promise((resolve) => setTimeout(resolve, 0));
           continue;
         }
 
-        const { blob, rendered, skipped: photosSkipped } = await getLetterPdfBlob(row, html, {
+        const { blob, rendered, skipped: photosSkipped } = await getLetterPdfBlob(row, letterResult.html, {
           forceRerender: FORCE_PDF_RERENDER || forceRerenderPdfs,
           saveLetterPdfMeta,
         });
@@ -963,12 +972,7 @@ export default function LetterExport() {
         skipped.length > 0
           ? `. Skipped ${skipped.length}: ${skipped.map((s) => s.address).join(", ")}`
           : "";
-      const noViolationsSkipped = rows.length - exportRows.length;
-      const noViolationsSuffix =
-        noViolationsSkipped > 0
-          ? `. ${noViolationsSkipped} no-violations home${noViolationsSkipped === 1 ? "" : "s"} omitted`
-          : "";
-      setLog(`Done (${pdfCount} PDFs${skippedSuffix}${noViolationsSuffix}).`);
+      setLog(`Done (${pdfCount} PDFs${skippedSuffix}).`);
     } catch (e) {
       console.error(e);
       setLog("Error: " + String(e));
@@ -1016,7 +1020,7 @@ export default function LetterExport() {
       setLog(
         `Marked ${result.updated} properties on ${confirmMarkStreet.streetName} complete` +
           (result.skippedNoViolations > 0
-            ? ` (${result.skippedNoViolations} no-violations, no letter needed)`
+            ? ` (${result.skippedNoViolations} no-violations letter${result.skippedNoViolations === 1 ? "" : "s"})`
             : "") +
           ".",
       );
@@ -1168,7 +1172,7 @@ export default function LetterExport() {
             })}
             <div className="relative ml-auto">
               <Button
-                disabled={busy || rowsNeedingLetters(reviewRows).length === 0}
+                disabled={busy || exportableReviewRows.length === 0}
                 onClick={() => {
                   setStreetMenuOpenId(null);
                   setDownloadMenuOpen((o) => !o);
@@ -1193,19 +1197,19 @@ export default function LetterExport() {
                   <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-gray-200 bg-white py-1 shadow-lg">
                     <button
                       type="button"
-                      disabled={activeStreetRows.length === 0 || rowsNeedingLetters(activeStreetRows).length === 0}
+                      disabled={exportableActiveStreetRows.length === 0}
                       onClick={downloadCurrentStreet}
                       className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
-                      This street — {activeStreetName} ({rowsNeedingLetters(activeStreetRows).length})
+                      This street — {activeStreetName} ({exportableActiveStreetRows.length})
                     </button>
                     <button
                       type="button"
-                      disabled={rowsNeedingLetters(reviewRows).length === 0}
+                      disabled={exportableReviewRows.length === 0}
                       onClick={downloadAllStreets}
                       className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                     >
-                      All streets ({rowsNeedingLetters(reviewRows).length})
+                      All streets ({exportableReviewRows.length})
                     </button>
                   </div>
                 </>
@@ -1237,13 +1241,18 @@ export default function LetterExport() {
                         <span className="text-xs font-medium text-slate-700 bg-slate-100 border border-slate-200 px-2 py-1 rounded-full">
                           No violations
                         </span>
-                      ) : row.generatedLetterAt ? (
+                      ) : null}
+                      {row.generatedLetterAt ? (
                         <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">
                           Generated {new Date(row.generatedLetterAt).toLocaleString()}
                         </span>
-                      ) : (
+                      ) : !row.noViolationsConfirmed ? (
                         <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">
                           Not generated
+                        </span>
+                      ) : (
+                        <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">
+                          Letter not generated
                         </span>
                       )}
                       <p className="text-xs font-medium text-gray-500">
@@ -1335,7 +1344,41 @@ export default function LetterExport() {
                             className="w-full text-sm px-3 py-2 rounded-xl border border-gray-200 focus:outline-none focus:border-violet-400 resize-y"
                           />
                         </>
-                      ) : null}
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <h3 className="font-semibold text-gray-800">No violations letter</h3>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                title="View letter"
+                                disabled={busy || rowBusy}
+                                onClick={() => void viewSingleLetter(row)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                {viewingId === row._id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Eye className="h-4 w-4" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                title="Download PDF"
+                                disabled={busy || rowBusy}
+                                onClick={() => void downloadSingleLetter(row)}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+                              >
+                                {exportingId === row._id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       <details className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2">
                         <summary className="cursor-pointer text-sm font-medium text-gray-700 select-none">
@@ -1426,7 +1469,7 @@ export default function LetterExport() {
                               }
                             }}
                           />
-                          <span>No violations - Skip letter for this property.</span>
+                          <span>No violations</span>
                         </label>
                       </div>
                     </div>
@@ -1461,8 +1504,7 @@ export default function LetterExport() {
                     </p>
                     <p>
                       {confirmMarkStreet.noViolations} home
-                      {confirmMarkStreet.noViolations === 1 ? "" : "s"} confirmed no violations (no letter
-                      needed)
+                      {confirmMarkStreet.noViolations === 1 ? "" : "s"} with no-violations letters
                     </p>
                     <p>
                       This marks all {confirmMarkStreet.totalOnStreet} properties on{" "}

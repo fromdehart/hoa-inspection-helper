@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type RefObject } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { uploadTemplateFile, uploadArcReferenceFile } from "@/lib/uploadClient";
+import { LetterTemplateVersionHistory } from "@/components/admin/LetterTemplateVersionHistory";
+import type { Id } from "../../../convex/_generated/dataModel";
 import {
   extractPdfTextInBrowser,
   extractPdfTextWithOcrFallback,
@@ -15,30 +17,37 @@ import {
   looksLikeRawPdfPayload,
 } from "@/lib/extractPdfText";
 
-/** Convex may store `templateText: ""`; `??` would hide non-empty `parsedText` and leave the editor blank. */
-function editorBodyFromStoredTemplate(doc: { templateText?: string; parsedText?: string } | null | undefined): string {
+/** Editable letter body — only `templateText`; never fall back to upload `parsedText`. */
+function editorBodyFromStoredTemplate(doc: { templateText?: string } | null | undefined): string {
   if (!doc) return "";
-  const custom = doc.templateText;
-  if (typeof custom === "string" && custom.trim().length > 0) return custom;
-  return doc.parsedText ?? "";
+  return doc.templateText ?? "";
 }
 
 export default function Settings() {
   const navigate = useNavigate();
-  const [uploadingTemplate, setUploadingTemplate] = useState(false);
-  const [templateErr, setTemplateErr] = useState("");
+  const [uploadingViolationTemplate, setUploadingViolationTemplate] = useState(false);
+  const [uploadingNoViolationsTemplate, setUploadingNoViolationsTemplate] = useState(false);
+  const [violationTemplateErr, setViolationTemplateErr] = useState("");
+  const [noViolationsTemplateErr, setNoViolationsTemplateErr] = useState("");
   const [docTemplateText, setDocTemplateText] = useState("");
+  const [noViolationsTemplateText, setNoViolationsTemplateText] = useState("");
   const loadedTemplateIdRef = useRef<string | null>(null);
+  const loadedNoViolationsTemplateIdRef = useRef<string | null>(null);
   const docTemplateRef = useRef<HTMLTextAreaElement | null>(null);
-  const docAutosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noViolationsTemplateRef = useRef<HTMLTextAreaElement | null>(null);
   const [docSaveState, setDocSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [noViolationsSaveState, setNoViolationsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [docLastSavedAt, setDocLastSavedAt] = useState<number | null>(null);
+  const [noViolationsLastSavedAt, setNoViolationsLastSavedAt] = useState<number | null>(null);
   const [saved, setSaved] = useState<Record<string, boolean>>({});
 
   const templateDocs = useQuery(api.letterTemplateDocs.list, {});
-  const activeTemplate = useQuery(api.letterTemplateDocs.getActive, {});
+  const activeViolationTemplate = useQuery(api.letterTemplateDocs.getActive, { variant: "violation" });
+  const activeNoViolationsTemplate = useQuery(api.letterTemplateDocs.getActive, { variant: "noViolations" });
 
   const updateTemplateText = useMutation(api.letterTemplateDocs.updateTemplateText);
+  const seedDefaultNoViolationsIfNeeded = useMutation(api.letterTemplateDocs.seedDefaultNoViolationsIfNeeded);
+  const bootstrapVersionFromCurrent = useMutation(api.letterTemplateDocs.bootstrapVersionFromCurrent);
   const ingestUploadedTemplate = useAction(api.letterTemplateIngest.ingestUploadedTemplate);
   const arcRefDocs = useQuery(api.arcReferenceDocs.list, {});
   const createArcRef = useMutation(api.arcReferenceDocs.create);
@@ -62,22 +71,26 @@ export default function Settings() {
     setTimeout(() => setSaved((s) => ({ ...s, [key]: false })), 2000);
   };
 
-  const insertTokenAtCursor = (token: string) => {
-    const el = docTemplateRef.current;
+  const insertTokenAtCursor = (
+    token: string,
+    text: string,
+    setText: (value: string) => void,
+    ref: RefObject<HTMLTextAreaElement | null>,
+  ) => {
+    const el = ref.current;
     if (!el) {
-      setDocTemplateText((prev) => `${prev}${prev.endsWith("\n") || prev.length === 0 ? "" : "\n"}${token}`);
+      setText(`${text}${text.endsWith("\n") || text.length === 0 ? "" : "\n"}${token}`);
       return;
     }
-    const start = el.selectionStart ?? docTemplateText.length;
+    const start = el.selectionStart ?? text.length;
     const end = el.selectionEnd ?? start;
-    const before = docTemplateText.slice(0, start);
-    const after = docTemplateText.slice(end);
+    const before = text.slice(0, start);
+    const after = text.slice(end);
     const needsLeadingNewline = before.length > 0 && !before.endsWith("\n");
     const insert = `${needsLeadingNewline ? "\n" : ""}${token}`;
     const next = before + insert + after;
-    setDocTemplateText(next);
+    setText(next);
 
-    // Restore focus/caret after React applies state.
     requestAnimationFrame(() => {
       el.focus();
       const caret = before.length + insert.length;
@@ -85,8 +98,60 @@ export default function Settings() {
     });
   };
 
-  const latestTemplate = templateDocs?.[0];
-  const currentTemplate = activeTemplate ?? latestTemplate;
+  const violationTemplate =
+    activeViolationTemplate ??
+    templateDocs?.find((doc) => !doc.variant || doc.variant === "violation");
+  const noViolationsTemplate =
+    activeNoViolationsTemplate ?? templateDocs?.find((doc) => doc.variant === "noViolations");
+
+  useEffect(() => {
+    void seedDefaultNoViolationsIfNeeded({});
+    void bootstrapVersionFromCurrent({});
+  }, [seedDefaultNoViolationsIfNeeded, bootstrapVersionFromCurrent]);
+
+  const uploadTemplate = async (
+    file: File,
+    variant: "violation" | "noViolations",
+    setUploading: (value: boolean) => void,
+    setErr: (value: string) => void,
+    savedKey: string,
+  ) => {
+    try {
+      setUploading(true);
+      setErr("");
+      const up = await uploadTemplateFile(file);
+      const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "docx";
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const parsedTextOverride =
+        fileType === "pdf" ? await extractPdfTextInBrowser(file) : undefined;
+      if (fileType === "pdf") {
+        if (!parsedTextOverride?.trim()) {
+          throw new Error("Could not extract readable text from PDF. Please upload a text-based PDF or DOCX.");
+        }
+        if (looksLikeRawPdfPayload(parsedTextOverride)) {
+          throw new Error(
+            "PDF parsing returned raw file bytes instead of readable text. Please try a DOCX upload for this template.",
+          );
+        }
+      }
+      await ingestUploadedTemplate({
+        fileName: file.name,
+        fileType,
+        sourcePublicUrl: up.publicUrl,
+        sourceFilePath: up.filePath,
+        fileBase64: btoa(binary),
+        parsedTextOverride,
+        variant,
+      });
+      flashSaved(savedKey);
+    } catch (err) {
+      setErr(String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (!arcReviewSettings) return;
@@ -101,42 +166,76 @@ export default function Settings() {
   ]);
 
   useEffect(() => {
-    if (!currentTemplate?._id) {
+    if (violationTemplate === undefined) return;
+    if (!violationTemplate?._id) {
       loadedTemplateIdRef.current = null;
       setDocTemplateText("");
       setDocSaveState("idle");
       setDocLastSavedAt(null);
       return;
     }
-    if (loadedTemplateIdRef.current === currentTemplate._id) return;
-    loadedTemplateIdRef.current = currentTemplate._id;
-    setDocTemplateText(editorBodyFromStoredTemplate(currentTemplate));
+    if (loadedTemplateIdRef.current === violationTemplate._id) return;
+    loadedTemplateIdRef.current = violationTemplate._id;
+    setDocTemplateText(editorBodyFromStoredTemplate(violationTemplate));
     setDocSaveState("idle");
-  }, [currentTemplate?._id, currentTemplate?.templateText, currentTemplate?.parsedText]);
+  }, [violationTemplate]);
+
+  useEffect(() => {
+    if (noViolationsTemplate === undefined) return;
+    if (!noViolationsTemplate?._id) {
+      loadedNoViolationsTemplateIdRef.current = null;
+      setNoViolationsTemplateText("");
+      setNoViolationsSaveState("idle");
+      setNoViolationsLastSavedAt(null);
+      return;
+    }
+    if (loadedNoViolationsTemplateIdRef.current === noViolationsTemplate._id) return;
+    loadedNoViolationsTemplateIdRef.current = noViolationsTemplate._id;
+    setNoViolationsTemplateText(editorBodyFromStoredTemplate(noViolationsTemplate));
+    setNoViolationsSaveState("idle");
+  }, [noViolationsTemplate]);
+
+  const violationDirty =
+    !!violationTemplate && docTemplateText !== editorBodyFromStoredTemplate(violationTemplate);
+  const noViolationsDirty =
+    !!noViolationsTemplate &&
+    noViolationsTemplateText !== editorBodyFromStoredTemplate(noViolationsTemplate);
+
+  const saveViolationTemplate = async () => {
+    if (!violationTemplate?._id || !docTemplateText.trim()) return;
+    setDocSaveState("saving");
+    try {
+      const result = await updateTemplateText({
+        id: violationTemplate._id as Id<"letterTemplateDocs">,
+        templateText: docTemplateText,
+      });
+      setDocSaveState("saved");
+      setDocLastSavedAt(result.savedAt);
+    } catch {
+      setDocSaveState("error");
+    }
+  };
+
+  const saveNoViolationsTemplate = async () => {
+    if (!noViolationsTemplate?._id || !noViolationsTemplateText.trim()) return;
+    setNoViolationsSaveState("saving");
+    try {
+      const result = await updateTemplateText({
+        id: noViolationsTemplate._id as Id<"letterTemplateDocs">,
+        templateText: noViolationsTemplateText,
+      });
+      setNoViolationsSaveState("saved");
+      setNoViolationsLastSavedAt(result.savedAt);
+    } catch {
+      setNoViolationsSaveState("error");
+    }
+  };
 
   useEffect(() => {
     return () => {
-      if (docAutosaveTimerRef.current) clearTimeout(docAutosaveTimerRef.current);
       if (reviewAutosaveRef.current) clearTimeout(reviewAutosaveRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    if (!currentTemplate?._id) return;
-    if (docTemplateText === editorBodyFromStoredTemplate(currentTemplate)) return;
-
-    if (docAutosaveTimerRef.current) clearTimeout(docAutosaveTimerRef.current);
-    docAutosaveTimerRef.current = setTimeout(async () => {
-      try {
-        setDocSaveState("saving");
-        await updateTemplateText({ id: currentTemplate._id, templateText: docTemplateText });
-        setDocSaveState("saved");
-        setDocLastSavedAt(Date.now());
-      } catch {
-        setDocSaveState("error");
-      }
-    }, 900);
-  }, [docTemplateText, currentTemplate?._id, currentTemplate?.templateText, currentTemplate?.parsedText, updateTemplateText]);
 
   useEffect(() => {
     if (!arcReviewSettings) return;
@@ -181,24 +280,24 @@ export default function Settings() {
       <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <h2 className="text-lg font-bold text-gray-800">Letter Template</h2>
+            <h2 className="text-lg font-bold text-gray-800">Violation letter template</h2>
             <Button
               asChild
               size="sm"
               type="button"
-              disabled={uploadingTemplate}
+              disabled={uploadingViolationTemplate}
               className="bg-[#4f46e5] hover:bg-[#4338ca] text-white"
             >
-              <label htmlFor="template-upload-input" className="cursor-pointer">
-                {uploadingTemplate ? "Uploading..." : "Upload Template"}
+              <label htmlFor="violation-template-upload-input" className="cursor-pointer">
+                {uploadingViolationTemplate ? "Uploading..." : "Upload Template"}
               </label>
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Upload one DOCX or PDF.
+            Used for homes with violation bullet points. Upload one DOCX or PDF.
           </p>
           <Input
-            id="template-upload-input"
+            id="violation-template-upload-input"
             type="file"
             accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="hidden"
@@ -206,48 +305,25 @@ export default function Settings() {
               const inputEl = e.currentTarget;
               const file = e.target.files?.[0];
               if (!file) return;
-              try {
-                setUploadingTemplate(true);
-                setTemplateErr("");
-                const up = await uploadTemplateFile(file);
-                const fileType = file.name.toLowerCase().endsWith(".pdf") ? "pdf" : "docx";
-                const bytes = new Uint8Array(await file.arrayBuffer());
-                let binary = "";
-                for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-                const parsedTextOverride =
-                  fileType === "pdf"
-                    ? await extractPdfTextInBrowser(file)
-                    : undefined;
-                if (fileType === "pdf") {
-                  if (!parsedTextOverride?.trim()) {
-                    throw new Error("Could not extract readable text from PDF. Please upload a text-based PDF or DOCX.");
-                  }
-                  if (looksLikeRawPdfPayload(parsedTextOverride)) {
-                    throw new Error("PDF parsing returned raw file bytes instead of readable text. Please try a DOCX upload for this template.");
-                  }
-                }
-                await ingestUploadedTemplate({
-                  fileName: file.name,
-                  fileType,
-                  sourcePublicUrl: up.publicUrl,
-                  sourceFilePath: up.filePath,
-                  fileBase64: btoa(binary),
-                  parsedTextOverride,
-                });
-                flashSaved("uploadedTemplate");
-              } catch (err) {
-                setTemplateErr(String(err));
-              } finally {
-                setUploadingTemplate(false);
-                inputEl.value = "";
-              }
+              await uploadTemplate(
+                file,
+                "violation",
+                setUploadingViolationTemplate,
+                setViolationTemplateErr,
+                "uploadedViolationTemplate",
+              );
+              inputEl.value = "";
             }}
           />
-          {uploadingTemplate && <p className="text-xs text-muted-foreground">Uploading and parsing template…</p>}
-          {templateErr && <p className="text-xs text-red-600">{templateErr}</p>}
-          {saved.uploadedTemplate && <p className="text-xs text-green-600">Template uploaded and parsed.</p>}
+          {uploadingViolationTemplate && (
+            <p className="text-xs text-muted-foreground">Uploading and parsing template…</p>
+          )}
+          {violationTemplateErr && <p className="text-xs text-red-600">{violationTemplateErr}</p>}
+          {saved.uploadedViolationTemplate && (
+            <p className="text-xs text-green-600">Violation template uploaded and parsed.</p>
+          )}
 
-          {currentTemplate && (
+          {violationTemplate && (
             <div className="rounded border p-3 space-y-2">
               <Textarea
                 ref={docTemplateRef}
@@ -264,18 +340,151 @@ export default function Settings() {
                     size="sm"
                     variant="outline"
                     type="button"
-                    onClick={() => insertTokenAtCursor(token)}
+                    onClick={() =>
+                      insertTokenAtCursor(token, docTemplateText, setDocTemplateText, docTemplateRef)
+                    }
                   >
                     Insert {token}
                   </Button>
                 ))}
               </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={!violationDirty || !docTemplateText.trim() || docSaveState === "saving"}
+                  onClick={() => void saveViolationTemplate()}
+                  className="bg-[#4f46e5] hover:bg-[#4338ca] text-white"
+                >
+                  {docSaveState === "saving" ? "Saving…" : "Save"}
+                </Button>
+                {violationDirty && (
+                  <span className="text-xs text-amber-700">Unsaved changes</span>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground min-h-[1rem]">
-                {docSaveState === "saving" && "Saving..."}
                 {docSaveState === "saved" &&
                   `Saved ${docLastSavedAt ? `at ${new Date(docLastSavedAt).toLocaleString()}` : ""}`}
-                {docSaveState === "error" && "Autosave failed. Try editing again."}
+                {docSaveState === "error" && "Save failed. Try again."}
               </p>
+              <LetterTemplateVersionHistory
+                templateDocId={violationTemplate._id as Id<"letterTemplateDocs">}
+                onRestored={(text) => {
+                  setDocTemplateText(text);
+                  setDocSaveState("saved");
+                  setDocLastSavedAt(Date.now());
+                }}
+              />
+            </div>
+          )}
+        </section>
+
+        <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-lg font-bold text-gray-800">No violations letter template</h2>
+            <Button
+              asChild
+              size="sm"
+              type="button"
+              disabled={uploadingNoViolationsTemplate}
+              className="bg-[#4f46e5] hover:bg-[#4338ca] text-white"
+            >
+              <label htmlFor="no-violations-template-upload-input" className="cursor-pointer">
+                {uploadingNoViolationsTemplate ? "Uploading..." : "Upload Template"}
+              </label>
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Used when a home is marked no violations. No maintenance bullet list is included.
+          </p>
+          <Input
+            id="no-violations-template-upload-input"
+            type="file"
+            accept=".docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            className="hidden"
+            onChange={async (e) => {
+              const inputEl = e.currentTarget;
+              const file = e.target.files?.[0];
+              if (!file) return;
+              await uploadTemplate(
+                file,
+                "noViolations",
+                setUploadingNoViolationsTemplate,
+                setNoViolationsTemplateErr,
+                "uploadedNoViolationsTemplate",
+              );
+              inputEl.value = "";
+            }}
+          />
+          {uploadingNoViolationsTemplate && (
+            <p className="text-xs text-muted-foreground">Uploading and parsing template…</p>
+          )}
+          {noViolationsTemplateErr && <p className="text-xs text-red-600">{noViolationsTemplateErr}</p>}
+          {saved.uploadedNoViolationsTemplate && (
+            <p className="text-xs text-green-600">No violations template uploaded and parsed.</p>
+          )}
+
+          {noViolationsTemplate && (
+            <div className="rounded border p-3 space-y-2">
+              <Textarea
+                ref={noViolationsTemplateRef}
+                value={noViolationsTemplateText}
+                onChange={(e) => setNoViolationsTemplateText(e.target.value)}
+                rows={14}
+                className="font-serif"
+                placeholder="Editable no-violations letter text..."
+              />
+              <div className="flex flex-wrap gap-2">
+                {(["{{date}}", "{{recipientName}}", "{{recipientStreet}}", "{{recipientCityStateZip}}"] as const).map((token) => (
+                  <Button
+                    key={token}
+                    size="sm"
+                    variant="outline"
+                    type="button"
+                    onClick={() =>
+                      insertTokenAtCursor(
+                        token,
+                        noViolationsTemplateText,
+                        setNoViolationsTemplateText,
+                        noViolationsTemplateRef,
+                      )
+                    }
+                  >
+                    Insert {token}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={
+                    !noViolationsDirty ||
+                    !noViolationsTemplateText.trim() ||
+                    noViolationsSaveState === "saving"
+                  }
+                  onClick={() => void saveNoViolationsTemplate()}
+                  className="bg-[#4f46e5] hover:bg-[#4338ca] text-white"
+                >
+                  {noViolationsSaveState === "saving" ? "Saving…" : "Save"}
+                </Button>
+                {noViolationsDirty && (
+                  <span className="text-xs text-amber-700">Unsaved changes</span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground min-h-[1rem]">
+                {noViolationsSaveState === "saved" &&
+                  `Saved ${noViolationsLastSavedAt ? `at ${new Date(noViolationsLastSavedAt).toLocaleString()}` : ""}`}
+                {noViolationsSaveState === "error" && "Save failed. Try again."}
+              </p>
+              <LetterTemplateVersionHistory
+                templateDocId={noViolationsTemplate._id as Id<"letterTemplateDocs">}
+                onRestored={(text) => {
+                  setNoViolationsTemplateText(text);
+                  setNoViolationsSaveState("saved");
+                  setNoViolationsLastSavedAt(Date.now());
+                }}
+              />
             </div>
           )}
         </section>

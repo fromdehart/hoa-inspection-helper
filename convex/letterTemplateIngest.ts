@@ -2,6 +2,7 @@ import { action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { v } from "convex/values";
 import { parseDocxText } from "./lib/parseDocxText";
+import { letterTemplateVariantValidator } from "./lib/letterTemplateVariant";
 
 type Block = { idx: number; text: string; kind: "paragraph" | "bullet" };
 
@@ -84,6 +85,7 @@ export const ingestUploadedTemplate = action({
     sourceFilePath: v.string(),
     fileBase64: v.optional(v.string()),
     parsedTextOverride: v.optional(v.string()),
+    variant: v.optional(letterTemplateVariantValidator),
   },
   handler: async (ctx, args) => {
     let buf: Uint8Array;
@@ -138,6 +140,7 @@ export const ingestUploadedTemplate = action({
       blocks,
       detection,
       mapping,
+      variant: args.variant,
     });
     return { id };
   },

@@ -34,6 +34,8 @@ import type * as lib_homeownerAuth from "../lib/homeownerAuth.js";
 import type * as lib_homeownerRateLimit from "../lib/homeownerRateLimit.js";
 import type * as lib_inspectorNotes from "../lib/inspectorNotes.js";
 import type * as lib_letterBulletFewShot from "../lib/letterBulletFewShot.js";
+import type * as lib_letterTemplateVariant from "../lib/letterTemplateVariant.js";
+import type * as lib_letterTemplateVersions from "../lib/letterTemplateVersions.js";
 import type * as lib_letterWorkflow from "../lib/letterWorkflow.js";
 import type * as lib_parseDocxText from "../lib/parseDocxText.js";
 import type * as lib_platformAuth from "../lib/platformAuth.js";
@@ -83,6 +85,8 @@ declare const fullApi: ApiFromModules<{
   "lib/homeownerRateLimit": typeof lib_homeownerRateLimit;
   "lib/inspectorNotes": typeof lib_inspectorNotes;
   "lib/letterBulletFewShot": typeof lib_letterBulletFewShot;
+  "lib/letterTemplateVariant": typeof lib_letterTemplateVariant;
+  "lib/letterTemplateVersions": typeof lib_letterTemplateVersions;
   "lib/letterWorkflow": typeof lib_letterWorkflow;
   "lib/parseDocxText": typeof lib_parseDocxText;
   "lib/platformAuth": typeof lib_platformAuth;

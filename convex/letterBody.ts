@@ -133,3 +133,18 @@ export const DEFAULT_LETTER_TEMPLATE = `<div style="font-family: 'Times New Roma
     <p style="margin: 0;">Covenants Committee<br/>Ridge Top Terrace HOA</p>
   </div>
 </div>`;
+
+/** Plain tokenized default for no-violations letterTemplateDocs (no maintenance items). */
+export const DEFAULT_NO_VIOLATIONS_LETTER_TEMPLATE = `{{date}}
+
+{{recipientName}}
+{{recipientStreet}}
+{{recipientCityStateZip}}
+
+Dear Homeowner(s):
+
+The Covenants Committee has completed its annual walkthrough of your property. We are pleased to report that no covenant violations were identified at this time.
+
+Thank you for your continued commitment to maintaining the appearance and integrity of our community. If you have any questions, please contact your HOA management office.
+
+Covenants Committee`;

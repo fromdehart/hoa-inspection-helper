@@ -12,7 +12,3 @@ export function isNoViolationsConfirmed(property: Doc<"properties">): boolean {
 export function isLetterWorkflowReady(property: Doc<"properties">): boolean {
   return hasLetterBullets(property) || isNoViolationsConfirmed(property);
 }
-
-export function shouldSkipLetterGeneration(property: Doc<"properties">): boolean {
-  return isNoViolationsConfirmed(property);
-}

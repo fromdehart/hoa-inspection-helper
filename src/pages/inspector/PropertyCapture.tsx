@@ -919,10 +919,7 @@ export default function PropertyCapture() {
                       }
                     }}
                   />
-                  <span className="text-sm text-gray-700">
-                    <span className="font-semibold">No violations</span>
-                    <span className="block text-xs text-gray-500">Skip letter for this property.</span>
-                  </span>
+                  <span className="text-sm text-gray-700 font-semibold">No violations</span>
                 </label>
                 <div className="flex flex-wrap items-center justify-start gap-2 pt-2">
                   <button

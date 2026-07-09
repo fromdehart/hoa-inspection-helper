@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { letterTemplateVariantValidator, letterTemplateVersionSourceValidator } from "./lib/letterTemplateVariant";
 
 export default defineSchema({
   hoas: defineTable({
@@ -116,7 +117,7 @@ export default defineSchema({
     letterPdfFilePath: v.optional(v.string()),
     letterPdfFingerprint: v.optional(v.string()),
     letterPdfRenderedAt: v.optional(v.number()),
-    /** Inspector/admin confirmed this home has no violations; skip letter generation. */
+    /** Inspector/admin confirmed this home has no violations; uses no-violations letter template. */
     noViolationsConfirmed: v.optional(v.boolean()),
     noViolationsConfirmedAt: v.optional(v.number()),
     noViolationsConfirmedByClerkUserId: v.optional(v.string()),
@@ -291,13 +292,28 @@ export default defineSchema({
       maintenanceEnd: v.optional(v.number()),
     }),
     status: v.union(v.literal("draft"), v.literal("active")),
+    variant: v.optional(letterTemplateVariantValidator),
     createdAt: v.number(),
     updatedAt: v.number(),
     activatedAt: v.optional(v.number()),
   })
     .index("by_status", ["status"])
     .index("by_hoa_status", ["hoaId", "status"])
+    .index("by_hoa_status_variant", ["hoaId", "status", "variant"])
     .index("by_hoa", ["hoaId"]),
+
+  letterTemplateVersions: defineTable({
+    hoaId: v.id("hoas"),
+    templateDocId: v.id("letterTemplateDocs"),
+    variant: letterTemplateVariantValidator,
+    templateText: v.string(),
+    source: letterTemplateVersionSourceValidator,
+    savedAt: v.number(),
+    savedByClerkUserId: v.optional(v.string()),
+    note: v.optional(v.string()),
+  })
+    .index("by_template_doc", ["templateDocId", "savedAt"])
+    .index("by_hoa_variant", ["hoaId", "variant", "savedAt"]),
 
   /** One AI-chat thread per homeowner+property (grounded in the HOA rules docs). */
   chatConversations: defineTable({
