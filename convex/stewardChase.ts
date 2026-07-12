@@ -130,9 +130,18 @@ export const listChaseWork = internalQuery({
 export const recordProposal = internalMutation({
   args: {
     hoaId: v.id("hoas"),
-    findingId: v.id("findings"),
-    caseId: v.id("cases"),
-    propertyId: v.id("properties"),
+    actionType: v.string(),
+    duty: v.string(),
+    trigger: v.string(),
+    findingId: v.optional(v.id("findings")),
+    caseId: v.optional(v.id("cases")),
+    propertyId: v.optional(v.id("properties")),
+    inboundEmailId: v.optional(v.id("inboundEmails")),
+    motionId: v.optional(v.id("motions")),
+    concurrenceClerkUserId: v.optional(v.string()),
+    concurrenceVote: v.optional(
+      v.union(v.literal("yes"), v.literal("no"), v.literal("abstain")),
+    ),
     autonomyLevel: v.union(v.literal("L1"), v.literal("L2"), v.literal("L3")),
     draftSubject: v.string(),
     draftBody: v.string(),
@@ -148,8 +157,8 @@ export const recordProposal = internalMutation({
     const runId = await ctx.db.insert("agentRuns", {
       hoaId: args.hoaId,
       agent: "steward",
-      duty: "chase",
-      trigger: "cron:daily-chase",
+      duty: args.duty,
+      trigger: args.trigger,
       model: args.model,
       status: "ok",
       startedAt: now,
@@ -162,7 +171,11 @@ export const recordProposal = internalMutation({
       findingId: args.findingId,
       caseId: args.caseId,
       propertyId: args.propertyId,
-      actionType: "pm_status_check",
+      inboundEmailId: args.inboundEmailId,
+      motionId: args.motionId,
+      concurrenceClerkUserId: args.concurrenceClerkUserId,
+      concurrenceVote: args.concurrenceVote,
+      actionType: args.actionType,
       autonomyLevel: args.autonomyLevel,
       draftSubject: args.draftSubject,
       draftBody: args.draftBody,
@@ -177,10 +190,10 @@ export const recordProposal = internalMutation({
     await ctx.db.insert("agentActions", {
       hoaId: args.hoaId,
       runId,
-      toolName: "draft_pm_status_check",
+      toolName: `draft_${args.actionType}`,
       argsSummary: args.needsHuman
         ? `Draft failed review ${args.attempts}x — escalated to the Desk`
-        : `Drafted follow-up: "${args.draftSubject}"`,
+        : `Drafted: "${args.draftSubject}"`,
       autonomyLevel: args.autonomyLevel,
       reviewerVerdict: args.reviewerVerdict,
       verdictReasons: args.verdictReasons,
@@ -294,6 +307,9 @@ async function chaseOne(
 
   await ctx.runMutation(internal.stewardChase.recordProposal, {
     hoaId: hoa.hoaId,
+    actionType: "pm_status_check",
+    duty: "chase",
+    trigger: "cron:daily-chase",
     findingId: item.findingId,
     caseId: item.caseId,
     propertyId: item.propertyId,

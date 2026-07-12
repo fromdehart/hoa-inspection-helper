@@ -227,15 +227,19 @@ export const dailySweep = internalMutation({
           hoaId: hoa._id,
           ...c,
           status,
+          source: "sweep",
           detectedAt: now,
           lastSeenAt: now,
         });
         created += 1;
       }
 
-      // Auto-resolve: open (or dismissed) findings whose condition cleared.
-      // Resolving dismissed rows lets a future recurrence fire fresh.
+      // Auto-resolve: open (or dismissed) SWEEP findings whose condition
+      // cleared. Resolving dismissed rows lets a future recurrence fire
+      // fresh. Event-sourced findings are exempt — no detector re-asserts
+      // them, so they close only by human action (dismiss / handling).
       for (const f of existing.concat(dismissed)) {
+        if (f.source === "event") continue;
         if (currentKeys.has(f.dedupeKey)) continue;
         await ctx.db.patch(f._id, { status: "resolved", resolvedAt: now });
         resolved += 1;
@@ -305,6 +309,44 @@ export const weeklyDigest = internalMutation({
       });
       await ctx.db.patch(runId, { endedAt: Date.now(), actionsCount: 1 });
     }
+  },
+});
+
+/**
+ * Event-driven finding entry point (webhook detectors like email intake).
+ * Dedupe-aware; routed by the same playbooks as sweep findings, but exempt
+ * from sweep auto-resolve (see dailySweep).
+ */
+export const createEventFinding = internalMutation({
+  args: {
+    hoaId: v.id("hoas"),
+    kind: v.string(),
+    dedupeKey: v.string(),
+    title: v.string(),
+    detail: v.optional(v.string()),
+    inboundEmailId: v.optional(v.id("inboundEmails")),
+    motionId: v.optional(v.id("motions")),
+    caseId: v.optional(v.id("cases")),
+    propertyId: v.optional(v.id("properties")),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const prior = await ctx.db
+      .query("findings")
+      .withIndex("by_hoa_dedupe", (q) => q.eq("hoaId", args.hoaId).eq("dedupeKey", args.dedupeKey))
+      .collect();
+    const live = prior.find((f) => f.status !== "resolved");
+    if (live) {
+      await ctx.db.patch(live._id, { lastSeenAt: now, title: args.title });
+      return live._id;
+    }
+    return await ctx.db.insert("findings", {
+      ...args,
+      status: routeForKind(args.kind) === "agent" ? "awaiting_agent" : "awaiting_human",
+      source: "event",
+      detectedAt: now,
+      lastSeenAt: now,
+    });
   },
 });
 

@@ -589,6 +589,8 @@ export default defineSchema({
       v.literal("error"),
     ),
     aiSummary: v.optional(v.string()),
+    /** Triage classification: violation | arc | vendor | financial | complaint | privileged | concurrence | noise | other. */
+    category: v.optional(v.string()),
     processedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
@@ -732,6 +734,8 @@ export default defineSchema({
     inboundEmailId: v.optional(v.id("inboundEmails")),
     fixPhotoId: v.optional(v.id("fixPhotos")),
     arcSubmissionId: v.optional(v.id("arcApplicationSubmissions")),
+    /** "sweep" findings auto-resolve when re-detection stops seeing them; "event" findings close by human action. */
+    source: v.optional(v.union(v.literal("sweep"), v.literal("event"))),
     detectedAt: v.number(),
     /** Refreshed every sweep while the condition persists. */
     lastSeenAt: v.number(),
@@ -749,9 +753,16 @@ export default defineSchema({
    */
   stewardProposals: defineTable({
     hoaId: v.id("hoas"),
-    findingId: v.id("findings"),
+    findingId: v.optional(v.id("findings")),
     caseId: v.optional(v.id("cases")),
     propertyId: v.optional(v.id("properties")),
+    inboundEmailId: v.optional(v.id("inboundEmails")),
+    motionId: v.optional(v.id("motions")),
+    /** record_concurrence payload: whose vote, and which way. */
+    concurrenceClerkUserId: v.optional(v.string()),
+    concurrenceVote: v.optional(
+      v.union(v.literal("yes"), v.literal("no"), v.literal("abstain")),
+    ),
     /** The autonomy action type this proposal executes as (lib/stewardAutonomy.ts). */
     actionType: v.string(),
     autonomyLevel: v.union(

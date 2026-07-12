@@ -31,6 +31,8 @@ export const FINDING_ROUTES: Record<string, FindingRoute> = {
   fix_photo_pending: "human",
   /** Admin review flow exists (Walkthrough → ready to review). */
   inspection_ready_for_review: "human",
+  /** A member emailed a concurrence but no single open motion matches — human links it. */
+  concurrence_needs_match: "human",
 };
 
 export function routeForKind(kind: string): FindingRoute {

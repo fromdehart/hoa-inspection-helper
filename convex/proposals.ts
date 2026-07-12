@@ -52,6 +52,44 @@ export const approve = mutation({
       decidedByClerkUserId: viewer.clerkUserId,
       decidedAt: now,
     });
+
+    // Execution is per action type — approval MEANS something different per
+    // proposal kind, and each execution path is a guarded deterministic write.
+    if (proposal.actionType === "record_concurrence") {
+      if (!proposal.motionId || !proposal.concurrenceClerkUserId || !proposal.concurrenceVote) {
+        throw new Error("Concurrence proposal is missing its vote payload.");
+      }
+      const motion = await ctx.db.get(proposal.motionId);
+      if (!motion || motion.hoaId !== viewer.hoaId) throw new Error("Motion not found.");
+      if (motion.status !== "open") throw new Error("That motion is already closed.");
+      const votes = motion.votes
+        .filter((entry) => entry.clerkUserId !== proposal.concurrenceClerkUserId)
+        .concat([
+          {
+            clerkUserId: proposal.concurrenceClerkUserId,
+            vote: proposal.concurrenceVote,
+            at: now,
+            viaInboundEmailId: proposal.inboundEmailId,
+          },
+        ]);
+      const yes = votes.filter((entry) => entry.vote === "yes").length;
+      const no = votes.filter((entry) => entry.vote === "no").length;
+      const status =
+        yes >= motion.quorumRequired
+          ? ("passed" as const)
+          : no >= motion.quorumRequired
+            ? ("failed" as const)
+            : ("open" as const);
+      await ctx.db.patch(proposal.motionId, {
+        votes,
+        status,
+        ...(status !== "open" ? { closedAt: now } : {}),
+      });
+      return { body: "", subject: proposal.draftSubject ?? "Concurrence recorded" };
+    }
+
+    // Draft-style proposals (pm_status_check, email_reply): the record of
+    // the approved text lands on the case timeline; the human sends it.
     if (proposal.caseId && proposal.propertyId) {
       await logCaseEvent(ctx, {
         hoaId: proposal.hoaId,
@@ -61,7 +99,9 @@ export const approve = mutation({
         actorRole: "system",
         actorClerkUserId: viewer.clerkUserId,
         visibility: "internal",
-        summary: `Steward follow-up approved${args.editedBody ? " (edited)" : ""}: "${
+        summary: `Steward ${
+          proposal.actionType === "email_reply" ? "reply draft" : "follow-up"
+        } approved${args.editedBody ? " (edited)" : ""}: "${
           proposal.draftSubject ?? "status check"
         }" — ${body}`,
       });

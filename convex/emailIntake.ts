@@ -14,6 +14,8 @@ import { isFeatureEnabled } from "./lib/featureFlags";
 import { logCaseEvent } from "./lib/caseEvents";
 import { findOpenViolationCase, openCaseInternal } from "./cases";
 import { normalizeEmail } from "./lib/homeownerAuth";
+import { effectiveAutonomy } from "./lib/stewardAutonomy";
+import { draftWithReview } from "./lib/stewardPipeline";
 
 /**
  * Email intake: cc/forward an email to the per-HOA intake address and an AI
@@ -112,13 +114,14 @@ export const getForProcessing = internalQuery({
       .first();
     if (explicit) approved = true;
 
-    if (!approved) {
-      const memberships = await ctx.db
-        .query("userHoaMemberships")
-        .withIndex("by_hoa", (q) => q.eq("hoaId", hoa._id))
-        .collect();
-      if (memberships.some((m) => m.email && normalizeEmail(m.email) === sender)) approved = true;
-    }
+    const memberships = await ctx.db
+      .query("userHoaMemberships")
+      .withIndex("by_hoa", (q) => q.eq("hoaId", hoa._id))
+      .collect();
+    const senderMembership = memberships.find(
+      (m) => m.email && normalizeEmail(m.email) === sender,
+    );
+    if (senderMembership) approved = true;
 
     if (!approved) {
       const companyId = hoa.managementCompanyId;
@@ -154,6 +157,21 @@ export const getForProcessing = internalQuery({
       if (prior?.caseId) threadCaseId = prior.caseId;
     }
 
+    // Steward context: reply drafting + concurrence capture (both flag-gated).
+    const stewardEnabled = await isFeatureEnabled(ctx, hoa._id, "steward");
+    const stewardConfig = stewardEnabled
+      ? await ctx.db
+          .query("stewardConfig")
+          .withIndex("by_hoa", (q) => q.eq("hoaId", hoa._id))
+          .first()
+      : null;
+    const openMotions = stewardEnabled
+      ? await ctx.db
+          .query("motions")
+          .withIndex("by_hoa_status", (q) => q.eq("hoaId", hoa._id).eq("status", "open"))
+          .collect()
+      : [];
+
     return {
       email,
       hoa: { _id: hoa._id, name: hoa.name, slug: hoa.slug },
@@ -162,6 +180,12 @@ export const getForProcessing = internalQuery({
       senderPropertyId,
       threadCaseId,
       addressBook: properties.map((p) => ({ propertyId: p._id, address: p.address })),
+      stewardEnabled,
+      stewardAutonomy: stewardConfig?.autonomy,
+      senderMembership: senderMembership
+        ? { clerkUserId: senderMembership.clerkUserId, role: senderMembership.role }
+        : null,
+      openMotions: openMotions.map((m) => ({ _id: m._id, title: m.title })),
     } as const;
   },
 });
@@ -176,6 +200,7 @@ export const markStatus = internalMutation({
       v.literal("error"),
     ),
     aiSummary: v.optional(v.string()),
+    category: v.optional(v.string()),
     caseId: v.optional(v.id("cases")),
     propertyId: v.optional(v.id("properties")),
   },
@@ -183,6 +208,7 @@ export const markStatus = internalMutation({
     await ctx.db.patch(args.inboundEmailId, {
       status: args.status,
       aiSummary: args.aiSummary,
+      category: args.category,
       caseId: args.caseId,
       propertyId: args.propertyId,
       processedAt: Date.now(),
@@ -204,6 +230,7 @@ export const applyToCase = internalMutation({
     caseId: v.optional(v.id("cases")),
     summary: v.string(),
     suggestedTitle: v.optional(v.string()),
+    category: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Id<"cases">> => applyToCaseInline(ctx, args),
 });
@@ -281,17 +308,24 @@ export const process = internalAction({
     if (parsed?.caseToken) caseId = parsed.caseToken as Id<"cases">;
     if (!caseId && data.threadCaseId) caseId = data.threadCaseId;
 
-    // --- AI extraction (summary + optional property match).
+    // --- AI triage: summary, property match, and CATEGORY (PRD §8.3).
     const addressListing = data.addressBook
       .slice(0, 400)
       .map((p) => `${p.propertyId} :: ${p.address}`)
       .join("\n");
     const { text } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt:
-        "You file inbound HOA emails into case records. " +
+        "You triage inbound HOA emails. " +
         'Return STRICT JSON: {"summary": "≤40 word factual summary", "suggestedTitle": "≤8 words", ' +
         '"propertyId": "<id from the list if the email clearly references one property, else null>", ' +
-        '"confidence": "high"|"low"}. Never guess a property on weak evidence — use null + low.',
+        '"confidence": "high"|"low", ' +
+        '"category": "violation"|"arc"|"vendor"|"financial"|"complaint"|"privileged"|"concurrence"|"noise"|"other", ' +
+        '"concurrenceVote": "yes"|"no"|null}. ' +
+        "Categories: arc = architectural request/application; vendor = contractor quotes/scheduling/invoices; " +
+        "financial = statements/accounting/banking; privileged = attorney-client or legal-counsel correspondence; " +
+        "concurrence = a board member voting/agreeing/objecting to a pending decision (set concurrenceVote); " +
+        "noise = newsletters/automated notices needing no action. " +
+        "Never guess a property on weak evidence — use null + low.",
       prompt:
         `Email from: ${data.email.from}\nSubject: ${data.email.subject}\n\nBody:\n${data.email.textBody.slice(0, 12_000)}\n\n` +
         `Known properties (id :: address):\n${addressListing}`,
@@ -302,21 +336,95 @@ export const process = internalAction({
 
     let summary = data.email.subject || "Email received";
     let suggestedTitle: string | undefined;
+    let category = "other";
+    let concurrenceVote: "yes" | "no" | null = null;
     try {
       const parsedAi = JSON.parse(text) as {
         summary?: string;
         suggestedTitle?: string;
         propertyId?: string | null;
         confidence?: string;
+        category?: string;
+        concurrenceVote?: string | null;
       };
       if (parsedAi.summary) summary = parsedAi.summary;
       suggestedTitle = parsedAi.suggestedTitle;
+      if (parsedAi.category) category = parsedAi.category;
+      if (parsedAi.concurrenceVote === "yes" || parsedAi.concurrenceVote === "no") {
+        concurrenceVote = parsedAi.concurrenceVote;
+      }
       if (!propertyId && !caseId && parsedAi.propertyId && parsedAi.confidence === "high") {
         const match = data.addressBook.find((p) => p.propertyId === parsedAi.propertyId);
         if (match) propertyId = match.propertyId;
       }
     } catch {
-      // extraction failed — keep the subject as summary
+      // extraction failed — keep the subject as summary, category "other"
+    }
+    // Privileged content: the classifier read the body, but nothing derived
+    // from it may persist — redact the stored summary at the source.
+    const storedSummary =
+      category === "privileged" ? "Privileged correspondence (content withheld)" : summary;
+
+    // --- Concurrence capture (PRD §8.4): a board/admin member voting by email.
+    if (
+      category === "concurrence" &&
+      data.stewardEnabled &&
+      data.senderMembership &&
+      data.senderMembership.role !== "inspector" &&
+      !caseId
+    ) {
+      if (data.openMotions.length === 1 && concurrenceVote) {
+        const level = effectiveAutonomy("record_concurrence", data.stewardAutonomy);
+        if (level !== "L0") {
+          const motion = data.openMotions[0];
+          await ctx.runMutation(internal.stewardChase.recordProposal, {
+            hoaId: data.hoa._id,
+            actionType: "record_concurrence",
+            duty: "triage",
+            trigger: "email:intake",
+            inboundEmailId: args.inboundEmailId,
+            motionId: motion._id,
+            concurrenceClerkUserId: data.senderMembership.clerkUserId,
+            concurrenceVote,
+            autonomyLevel: level,
+            draftSubject: `Record ${concurrenceVote.toUpperCase()} vote on "${motion.title}"`,
+            draftBody: `${data.email.from} emailed a ${concurrenceVote} concurrence on the open motion "${motion.title}". Approving records it as an evidence-linked vote.`,
+            contextSummary: `Email subject: ${data.email.subject}\nSummary: ${summary}`,
+            reviewerVerdict: "approved",
+            attempts: 1,
+            needsHuman: false,
+            model: "deterministic",
+          });
+        }
+      } else if (data.openMotions.length > 1) {
+        await ctx.runMutation(internal.steward.createEventFinding, {
+          hoaId: data.hoa._id,
+          kind: "concurrence_needs_match",
+          dedupeKey: `concurrence_needs_match:${args.inboundEmailId}`,
+          title: `${data.email.from} emailed a concurrence — link it to the right motion`,
+          inboundEmailId: args.inboundEmailId,
+        });
+      }
+      await ctx.runMutation(internal.emailIntake.markStatus, {
+        inboundEmailId: args.inboundEmailId,
+        status: "processed",
+        aiSummary: storedSummary,
+        category,
+      });
+      return null;
+    }
+
+    // --- Noise: classified as needing no action, and nothing routed it to a
+    // case. Filed as processed with no record touched (still auditable on the
+    // inboundEmails table).
+    if (category === "noise" && !caseId) {
+      await ctx.runMutation(internal.emailIntake.markStatus, {
+        inboundEmailId: args.inboundEmailId,
+        status: "processed",
+        aiSummary: storedSummary,
+        category,
+      });
+      return null;
     }
 
     // Token/thread routes still need the property from the case itself.
@@ -325,14 +433,15 @@ export const process = internalAction({
         .runMutation(internal.emailIntake.applyByCaseId, {
           inboundEmailId: args.inboundEmailId,
           caseId,
-          summary,
+          summary: storedSummary,
         })
         .catch(() => null);
       if (applied) {
         await ctx.runMutation(internal.emailIntake.markStatus, {
           inboundEmailId: args.inboundEmailId,
           status: "processed",
-          aiSummary: summary,
+          aiSummary: storedSummary,
+          category,
           caseId: applied.caseId,
           propertyId: applied.propertyId,
         });
@@ -358,22 +467,89 @@ export const process = internalAction({
       caseId,
       summary,
       suggestedTitle,
+      category,
     });
     await ctx.runMutation(internal.emailIntake.markStatus, {
       inboundEmailId: args.inboundEmailId,
       status: "processed",
-      aiSummary: summary,
+      aiSummary: storedSummary,
+      category,
       caseId: newCaseId,
       propertyId,
     });
     await notify(
       data.hoa._id,
       `Case updated via email — ${data.email.subject || "(no subject)"}`,
-      `${data.email.from} added information to a case by email. Summary: ${summary}`,
+      `${data.email.from} added information to a case by email. Summary: ${storedSummary}`,
     );
+
+    // --- Reply draft (L1, PRD §8.3): acknowledge a homeowner's filed email.
+    // Only for homeowners-of-record, never for privileged content, and only
+    // when the steward flag is on. A failed review skips silently — a reply
+    // is optional, not owed.
+    if (
+      data.stewardEnabled &&
+      data.senderPropertyId === propertyId &&
+      (category === "violation" || category === "complaint" || category === "other")
+    ) {
+      const level = effectiveAutonomy("email_reply", data.stewardAutonomy);
+      if (level !== "L0") {
+        try {
+          const result = await draftWithReview(ctx, {
+            stewardSystem: REPLY_STEWARD_SYSTEM.replace("{HOA name}", data.hoa.name),
+            reviewerSystem: REPLY_REVIEWER_SYSTEM,
+            context:
+              `HOA: ${data.hoa.name}\nHomeowner email subject: ${data.email.subject}\n` +
+              `Filed summary: ${summary}\nCategory: ${category}`,
+            precheck: (draft) => {
+              const words = draft.body.trim().split(/\s+/).length;
+              return words < 25 || words > 160 ? `body is ${words} words (expected 30-140)` : null;
+            },
+          });
+          if (result.draft) {
+            await ctx.runMutation(internal.stewardChase.recordProposal, {
+              hoaId: data.hoa._id,
+              actionType: "email_reply",
+              duty: "triage",
+              trigger: "email:intake",
+              inboundEmailId: args.inboundEmailId,
+              caseId: newCaseId,
+              propertyId,
+              autonomyLevel: level,
+              draftSubject: result.draft.subject,
+              draftBody: result.draft.body,
+              contextSummary: `Reply to ${data.email.from} re: "${data.email.subject}"\nFiled summary: ${summary}`,
+              reviewerVerdict: "approved",
+              verdictReasons: result.reasons || undefined,
+              attempts: result.attempts,
+              needsHuman: false,
+              model: result.model,
+            });
+          }
+        } catch (e) {
+          console.error("reply draft failed", e);
+        }
+      }
+    }
     return null;
   },
 });
+
+const REPLY_STEWARD_SYSTEM = `You are the Steward, the operations agent for a volunteer HOA board.
+A homeowner emailed the HOA and their message was filed. Draft a short acknowledgment reply.
+Rules:
+- Confirm their message was received and is on file with the board.
+- Set the expectation that the board will follow up; do NOT promise outcomes, decisions, or dates.
+- Use ONLY facts from the context. No legal language, no commitments, no apologies for the issue itself.
+- Plain text. Greeting "Hi," and sign-off "Thank you,\nThe {HOA name} Board". 40–100 words.
+Return STRICT JSON: {"subject": "...", "body": "..."}`;
+
+const REPLY_REVIEWER_SYSTEM = `You are the Reviewer. Verify an acknowledgment reply to a homeowner before it may proceed. Reject unless ALL hold:
+1. It only confirms receipt/filing and that the board will follow up — no outcomes, decisions, dates, or commitments.
+2. Every factual claim appears in the context.
+3. Courteous, professional; 30–140 words; plain text.
+4. No legal language and no personal data beyond what the homeowner themselves raised.
+Return STRICT JSON: {"verdict": "approve"|"reject", "reasons": ["..."]}`;
 
 /** Attach to a specific case id (token/thread route); validates the case exists. */
 export const applyByCaseId = internalMutation({
@@ -492,17 +668,44 @@ async function applyToCaseInline(
     caseId?: Id<"cases">;
     summary: string;
     suggestedTitle?: string;
+    category?: string;
   },
 ): Promise<Id<"cases">> {
   const email = await ctx.db.get(args.inboundEmailId);
   if (!email) throw new Error("Inbound email not found.");
+
+  // Triage category drives the case type; unmapped categories stay violations
+  // (the historical behavior). Privileged content never reaches summaries:
+  // the event is redacted at write time so no future drafting context —
+  // which reads caseEvents, never raw emails — can leak it (PRD §8.3).
+  const privileged = args.category === "privileged";
+  const caseType =
+    args.category === "arc"
+      ? ("architectural" as const)
+      : args.category === "complaint"
+        ? ("complaint" as const)
+        : args.category === "vendor" || args.category === "financial"
+          ? ("other" as const)
+          : ("violation" as const);
 
   let caseId = args.caseId ?? null;
   if (caseId) {
     const caseDoc = await ctx.db.get(caseId);
     if (!caseDoc || caseDoc.hoaId !== args.hoaId) caseId = null;
   }
-  if (!caseId) {
+  if (!caseId && caseType === "architectural") {
+    const open = await ctx.db
+      .query("cases")
+      .withIndex("by_hoa_property", (q) =>
+        q.eq("hoaId", args.hoaId).eq("propertyId", args.propertyId),
+      )
+      .collect();
+    caseId =
+      open.find(
+        (c) => c.caseType === "architectural" && c.status !== "resolved" && c.status !== "closed",
+      )?._id ?? null;
+  }
+  if (!caseId && caseType !== "architectural") {
     const open = await findOpenViolationCase(ctx, args.propertyId);
     caseId = open?._id ?? null;
   }
@@ -510,7 +713,7 @@ async function applyToCaseInline(
     caseId = await openCaseInternal(ctx, {
       hoaId: args.hoaId,
       propertyId: args.propertyId,
-      caseType: "violation",
+      caseType,
       title: args.suggestedTitle?.trim() || email.subject || "Email report",
       source: "email",
       actorRole: "system",
@@ -522,8 +725,10 @@ async function applyToCaseInline(
     propertyId: args.propertyId,
     type: "emailReceived",
     actorRole: "system",
-    summary: `Email from ${email.from}: ${args.summary}`,
-    visibility: "shared",
+    summary: privileged
+      ? `Privileged correspondence from ${email.from} (content withheld — read the original)`
+      : `Email from ${email.from}: ${args.summary}`,
+    visibility: privileged ? "internal" : "shared",
     inboundEmailId: args.inboundEmailId,
   });
   await ctx.db.patch(caseId, { updatedAt: Date.now() });

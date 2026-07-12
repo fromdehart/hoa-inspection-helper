@@ -23,7 +23,9 @@ export type StewardActionType =
   | "homeowner_letter" // homeowner-facing letters & notices
   | "stage_transition" // case stage transitions (never automatic)
   | "hearing_notice" // hearing scheduling / notice send
-  | "open_motion"; // opening a concurrence/vote
+  | "open_motion" // opening a concurrence/vote
+  | "email_reply" // drafted reply to a filed homeowner email
+  | "record_concurrence"; // recording an observed email/text vote as evidence
 
 export const AUTONOMY_DEFAULTS: Record<StewardActionType, AutonomyLevel> = {
   internal_note: "L3",
@@ -34,6 +36,8 @@ export const AUTONOMY_DEFAULTS: Record<StewardActionType, AutonomyLevel> = {
   stage_transition: "L2",
   hearing_notice: "L2",
   open_motion: "L2",
+  email_reply: "L1",
+  record_concurrence: "L2",
 };
 
 export const AUTONOMY_CEILINGS: Record<StewardActionType, AutonomyLevel> = {
@@ -45,6 +49,8 @@ export const AUTONOMY_CEILINGS: Record<StewardActionType, AutonomyLevel> = {
   stage_transition: "L2",
   hearing_notice: "L2",
   open_motion: "L3",
+  email_reply: "L2",
+  record_concurrence: "L3",
 };
 
 const LEVEL_ORDER: AutonomyLevel[] = ["L0", "L1", "L2", "L3"];
