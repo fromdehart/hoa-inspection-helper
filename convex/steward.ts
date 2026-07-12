@@ -1,22 +1,179 @@
 import { internalMutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx } from "./_generated/server";
 import { isFeatureEnabled } from "./lib/featureFlags";
 import { requireViewerRole } from "./lib/tenantAuth";
+import { routeForKind } from "./lib/stewardPlaybooks";
 
 /**
- * The Steward's runtime substrate (PRD §8.1–8.2). This first slice is
- * deliberately deterministic: cron-driven sweeps that OBSERVE (L0) and record
- * what needs attention — stale cases, overdue deadlines, aging ARC
- * applications — into the agentRuns/agentActions audit trail the Desk reads.
- * LLM-composed duties (chase drafts, triage, digest prose) layer on top of
- * these observations behind the Reviewer gate; they never replace them.
+ * The Steward's deterministic monitoring loop (PRD §8.1–8.2).
  *
- * Kill switch: everything here no-ops for HOAs without the "steward" flag.
+ * Architecture: DETECTORS observe known conditions and emit typed FINDINGS
+ * into a deduplicated queue; PLAYBOOKS route each finding to whoever acts
+ * ("awaiting_human" → the Desk, "awaiting_agent" → the LLM pass consumes the
+ * batch behind the Reviewer gate). Detection re-runs every sweep, so a
+ * finding whose condition cleared auto-resolves — the queue self-heals and
+ * never nags about fixed problems. The agent NEVER scans the world; it reads
+ * this queue.
+ *
+ * Kill switch: everything no-ops for HOAs without the "steward" flag.
  */
 
 /** ARC applications older than this without a verdict are "aging" (PRD §8.6). */
 const ARC_SLA_MS = 7 * 24 * 60 * 60 * 1000;
+/** Open motions older than this with quorum not reached are "stalled". */
+const MOTION_STALL_MS = 3 * 24 * 60 * 60 * 1000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type CandidateFinding = {
+  kind: string;
+  dedupeKey: string;
+  title: string;
+  detail?: string;
+  caseId?: Id<"cases">;
+  propertyId?: Id<"properties">;
+  deadlineId?: Id<"deadlines">;
+  motionId?: Id<"motions">;
+  inboundEmailId?: Id<"inboundEmails">;
+  fixPhotoId?: Id<"fixPhotos">;
+  arcSubmissionId?: Id<"arcApplicationSubmissions">;
+};
+
+/** Run every detector for one HOA and return the complete current condition set. */
+async function detect(
+  ctx: MutationCtx,
+  hoaId: Id<"hoas">,
+  now: number,
+): Promise<CandidateFinding[]> {
+  const found: CandidateFinding[] = [];
+
+  // Overdue open cases — the loop the president runs by hand today
+  // ("Following up again…", OM §2.1).
+  const dueCases = await ctx.db
+    .query("cases")
+    .withIndex("by_hoa_due", (q) => q.eq("hoaId", hoaId).lt("actionDueAt", now))
+    .collect();
+  for (const c of dueCases) {
+    if (c.status === "resolved" || c.status === "closed") continue;
+    if (c.actionDueAt == null) continue;
+    const daysLate = Math.floor((now - c.actionDueAt) / DAY_MS);
+    found.push({
+      kind: "case_overdue",
+      dedupeKey: `case_overdue:${c._id}`,
+      title: `"${c.title}" is ${daysLate}d past its ${c.stageKey} deadline`,
+      caseId: c._id,
+      propertyId: c.propertyId,
+    });
+  }
+
+  // ARC applications past the SLA without a decision (PRD §8.6).
+  const arcSubs = await ctx.db
+    .query("arcApplicationSubmissions")
+    .withIndex("by_hoa", (q) => q.eq("hoaId", hoaId))
+    .collect();
+  for (const sub of arcSubs) {
+    const open = sub.status !== "complete" || sub.verdict == null;
+    if (open && now - sub.createdAt > ARC_SLA_MS) {
+      const daysOld = Math.floor((now - sub.createdAt) / DAY_MS);
+      found.push({
+        kind: "arc_aging",
+        dedupeKey: `arc_aging:${sub._id}`,
+        title: `ARC application is ${daysOld}d old without a decision`,
+        propertyId: sub.propertyId,
+        arcSubmissionId: sub._id,
+      });
+    }
+  }
+
+  // Compliance deadlines past due without completion evidence — the
+  // expired-license class of failure (OM §2.4). Escalation is the
+  // deterministic side-effect; the finding routes to the Desk.
+  const dueDeadlines = await ctx.db
+    .query("deadlines")
+    .withIndex("by_hoa_due", (q) => q.eq("hoaId", hoaId).lt("dueAt", now))
+    .collect();
+  for (const d of dueDeadlines) {
+    if (d.verificationState === "verified") continue;
+    if (d.verificationState === "unverified") {
+      await ctx.db.patch(d._id, { verificationState: "escalated", updatedAt: now });
+    }
+    found.push({
+      kind: "deadline_unverified",
+      dedupeKey: `deadline_unverified:${d._id}`,
+      title: `"${d.title}" was due ${new Date(d.dueAt).toLocaleDateString()} and has no completion evidence`,
+      deadlineId: d._id,
+    });
+  }
+
+  // Stalled motions: open past the stall window without quorum — the
+  // "lost concurrence" failure (OM §2.2).
+  const openMotions = await ctx.db
+    .query("motions")
+    .withIndex("by_hoa_status", (q) => q.eq("hoaId", hoaId).eq("status", "open"))
+    .collect();
+  for (const m of openMotions) {
+    if (now - m.createdAt <= MOTION_STALL_MS) continue;
+    const daysOpen = Math.floor((now - m.createdAt) / DAY_MS);
+    found.push({
+      kind: "motion_stalled",
+      dedupeKey: `motion_stalled:${m._id}`,
+      title: `Motion "${m.title}" has waited ${daysOpen}d with ${m.votes.length} of ${m.quorumRequired} needed votes`,
+      motionId: m._id,
+    });
+  }
+
+  // Quarantined intake email waiting to be filed.
+  const inbound = await ctx.db
+    .query("inboundEmails")
+    .withIndex("by_hoa", (q) => q.eq("hoaId", hoaId))
+    .collect();
+  for (const e of inbound) {
+    if (e.status !== "quarantined") continue;
+    found.push({
+      kind: "email_quarantined",
+      dedupeKey: `email_quarantined:${e._id}`,
+      title: `Unfiled email: "${e.subject ?? "(no subject)"}"`,
+      inboundEmailId: e._id,
+    });
+  }
+
+  // Homeowner fix photos waiting for review.
+  const fixPhotos = await ctx.db
+    .query("fixPhotos")
+    .withIndex("by_hoa", (q) => q.eq("hoaId", hoaId))
+    .collect();
+  for (const p of fixPhotos) {
+    if (p.verificationStatus !== "pending" && p.verificationStatus !== "needsReview") continue;
+    found.push({
+      kind: "fix_photo_pending",
+      dedupeKey: `fix_photo_pending:${p._id}`,
+      title: "Homeowner fix photo waiting for review",
+      propertyId: p.propertyId,
+      fixPhotoId: p._id,
+    });
+  }
+
+  // Inspections landed in "ready to review" — updates coming from the field.
+  const properties = await ctx.db
+    .query("properties")
+    .withIndex("by_hoa", (q) => q.eq("hoaId", hoaId))
+    .collect();
+  for (const p of properties) {
+    if (p.status !== "review") continue;
+    found.push({
+      kind: "inspection_ready_for_review",
+      dedupeKey: `inspection_ready_for_review:${p._id}`,
+      title: `${p.address} is ready for inspection review`,
+      propertyId: p._id,
+    });
+  }
+
+  return found;
+}
+
+const OPEN_STATUSES = ["new", "awaiting_agent", "awaiting_human"] as const;
 
 export const dailySweep = internalMutation({
   args: {},
@@ -36,101 +193,94 @@ export const dailySweep = internalMutation({
         startedAt: now,
       });
 
-      let actions = 0;
-      const observe = async (
-        toolName: string,
-        argsSummary: string,
-        refs: {
-          caseId?: Id<"cases">;
-          propertyId?: Id<"properties">;
-          deadlineId?: Id<"deadlines">;
-        },
-      ) => {
-        await ctx.db.insert("agentActions", {
-          hoaId: hoa._id,
-          runId,
-          toolName,
-          argsSummary,
-          autonomyLevel: "L0",
-          reviewerVerdict: "exempt",
-          outcome: "observed",
-          ...refs,
-          createdAt: now,
-        });
-        actions += 1;
-      };
+      const candidates = await detect(ctx, hoa._id, now);
+      const currentKeys = new Set(candidates.map((c) => c.dedupeKey));
 
-      // Overdue open cases: actionDueAt in the past. This is the loop the
-      // president runs by hand today ("Following up again…", OM §2.1).
-      const dueCases = await ctx.db
-        .query("cases")
-        .withIndex("by_hoa_due", (q) => q.eq("hoaId", hoa._id).lt("actionDueAt", now))
-        .collect();
-      for (const c of dueCases) {
-        if (c.status === "resolved" || c.status === "closed") continue;
-        if (c.actionDueAt == null) continue;
-        const daysLate = Math.floor((now - c.actionDueAt) / (24 * 60 * 60 * 1000));
-        await observe(
-          "flag_overdue_case",
-          `"${c.title}" is ${daysLate}d past its ${c.stageKey} deadline`,
-          { caseId: c._id, propertyId: c.propertyId },
-        );
+      // Load every non-terminal finding once; index rows by dedupeKey.
+      const existing: Doc<"findings">[] = [];
+      for (const status of OPEN_STATUSES) {
+        const rows = await ctx.db
+          .query("findings")
+          .withIndex("by_hoa_status", (q) => q.eq("hoaId", hoa._id).eq("status", status))
+          .collect();
+        existing.push(...rows);
       }
-
-      // ARC applications past the SLA without a verdict (PRD §8.6).
-      const arcSubs = await ctx.db
-        .query("arcApplicationSubmissions")
-        .withIndex("by_hoa", (q) => q.eq("hoaId", hoa._id))
+      const dismissed = await ctx.db
+        .query("findings")
+        .withIndex("by_hoa_status", (q) => q.eq("hoaId", hoa._id).eq("status", "dismissed"))
         .collect();
-      for (const sub of arcSubs) {
-        const open = sub.status !== "complete" || sub.verdict == null;
-        if (open && now - sub.createdAt > ARC_SLA_MS) {
-          const daysOld = Math.floor((now - sub.createdAt) / (24 * 60 * 60 * 1000));
-          await observe(
-            "flag_aging_arc_application",
-            `ARC application is ${daysOld}d old without a decision`,
-            { propertyId: sub.propertyId },
-          );
+      const byKey = new Map(existing.concat(dismissed).map((f) => [f.dedupeKey, f]));
+
+      let created = 0;
+      let resolved = 0;
+
+      // Upsert: refresh live findings, create + route new ones. A dismissed
+      // finding blocks re-creation while its condition persists.
+      for (const c of candidates) {
+        const prior = byKey.get(c.dedupeKey);
+        if (prior) {
+          await ctx.db.patch(prior._id, { lastSeenAt: now, title: c.title });
+          continue;
         }
+        const status = routeForKind(c.kind) === "agent" ? "awaiting_agent" : "awaiting_human";
+        await ctx.db.insert("findings", {
+          hoaId: hoa._id,
+          ...c,
+          status,
+          detectedAt: now,
+          lastSeenAt: now,
+        });
+        created += 1;
       }
 
-      // Compliance deadlines past due and still unverified (PRD §10 — the
-      // expired-license class of failure).
-      const dueDeadlines = await ctx.db
-        .query("deadlines")
-        .withIndex("by_hoa_due", (q) => q.eq("hoaId", hoa._id).lt("dueAt", now))
-        .collect();
-      for (const d of dueDeadlines) {
-        if (d.verificationState !== "unverified") continue;
-        await observe(
-          "flag_unverified_deadline",
-          `"${d.title}" was due ${new Date(d.dueAt).toLocaleDateString()} and has no completion evidence`,
-          { deadlineId: d._id },
-        );
-        await ctx.db.patch(d._id, { verificationState: "escalated", updatedAt: now });
+      // Auto-resolve: open (or dismissed) findings whose condition cleared.
+      // Resolving dismissed rows lets a future recurrence fire fresh.
+      for (const f of existing.concat(dismissed)) {
+        if (currentKeys.has(f.dedupeKey)) continue;
+        await ctx.db.patch(f._id, { status: "resolved", resolvedAt: now });
+        resolved += 1;
       }
 
-      await ctx.db.patch(runId, { endedAt: Date.now(), actionsCount: actions });
+      await ctx.db.insert("agentActions", {
+        hoaId: hoa._id,
+        runId,
+        toolName: "sweep_findings",
+        argsSummary: `${candidates.length} conditions observed · ${created} new findings · ${resolved} auto-resolved`,
+        autonomyLevel: "L0",
+        reviewerVerdict: "exempt",
+        outcome: "executed",
+        createdAt: now,
+      });
+      await ctx.db.patch(runId, { endedAt: Date.now(), actionsCount: created + resolved });
     }
   },
 });
 
 /**
- * Weekly digest (PRD §6.4) — v1 rolls up the week's observations into one
- * run record the Desk can render. Prose/email delivery arrives with the LLM
- * digest duty; the deterministic rollup stays the source of truth.
+ * Weekly digest (PRD §6.4) — v1 rolls up the open queue and the week's agent
+ * activity into one run record the Desk can render. Prose/email delivery
+ * arrives with the LLM digest duty; this deterministic rollup stays the
+ * source of truth.
  */
 export const weeklyDigest = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const weekAgo = now - 7 * DAY_MS;
     const hoas = await ctx.db.query("hoas").collect();
 
     for (const hoa of hoas) {
       if (!(await isFeatureEnabled(ctx, hoa._id, "steward"))) continue;
 
-      const recent = await ctx.db
+      let openCount = 0;
+      for (const status of OPEN_STATUSES) {
+        const rows = await ctx.db
+          .query("findings")
+          .withIndex("by_hoa_status", (q) => q.eq("hoaId", hoa._id).eq("status", status))
+          .collect();
+        openCount += rows.length;
+      }
+      const recentActions = await ctx.db
         .query("agentActions")
         .withIndex("by_hoa_created", (q) => q.eq("hoaId", hoa._id).gt("createdAt", weekAgo))
         .collect();
@@ -147,7 +297,7 @@ export const weeklyDigest = internalMutation({
         hoaId: hoa._id,
         runId,
         toolName: "compile_weekly_digest",
-        argsSummary: `${recent.length} agent actions in the last 7 days`,
+        argsSummary: `${openCount} findings open · ${recentActions.length} agent actions in the last 7 days`,
         autonomyLevel: "L3",
         reviewerVerdict: "exempt",
         outcome: "executed",

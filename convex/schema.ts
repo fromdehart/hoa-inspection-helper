@@ -702,6 +702,45 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_hoa_status", ["hoaId", "status"]),
 
+  /**
+   * The deterministic monitoring queue: typed findings emitted by detectors
+   * (cron sweeps now, event hooks later) and routed by playbooks — a known
+   * playbook handles it or marks who must act ("awaiting_human" → the Desk,
+   * "awaiting_agent" → the Steward's LLM pass consumes it in batch). The
+   * agent never scans the world; it reads this queue. Findings auto-resolve
+   * when the detector no longer sees the condition, so the queue self-heals.
+   */
+  findings: defineTable({
+    hoaId: v.id("hoas"),
+    /** Detector-defined kind: case_overdue, arc_aging, deadline_unverified, motion_stalled, email_quarantined, fix_photo_pending, inspection_ready_for_review, … */
+    kind: v.string(),
+    /** `${kind}:${refId}` — one live finding per condition; re-detection refreshes instead of duplicating. */
+    dedupeKey: v.string(),
+    title: v.string(),
+    detail: v.optional(v.string()),
+    status: v.union(
+      v.literal("new"),
+      v.literal("awaiting_agent"),
+      v.literal("awaiting_human"),
+      v.literal("resolved"),
+      v.literal("dismissed"),
+    ),
+    caseId: v.optional(v.id("cases")),
+    propertyId: v.optional(v.id("properties")),
+    deadlineId: v.optional(v.id("deadlines")),
+    motionId: v.optional(v.id("motions")),
+    inboundEmailId: v.optional(v.id("inboundEmails")),
+    fixPhotoId: v.optional(v.id("fixPhotos")),
+    arcSubmissionId: v.optional(v.id("arcApplicationSubmissions")),
+    detectedAt: v.number(),
+    /** Refreshed every sweep while the condition persists. */
+    lastSeenAt: v.number(),
+    resolvedAt: v.optional(v.number()),
+    dismissedByClerkUserId: v.optional(v.string()),
+  })
+    .index("by_hoa_status", ["hoaId", "status"])
+    .index("by_hoa_dedupe", ["hoaId", "dedupeKey"]),
+
   /** One row per agent invocation (both agents), whether or not it acted (PRD §8.2). */
   agentRuns: defineTable({
     hoaId: v.id("hoas"),
