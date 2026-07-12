@@ -4,7 +4,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { uploadPhoto } from "@/lib/uploadClient";
 import { buildInspectorThumbnailJpeg } from "@/lib/thumbnailImage";
 import { runPool } from "@/lib/runPool";
-import { db, type OutboxPhoto } from "./db";
+import { db, type OutboxCaseEvent, type OutboxPhoto } from "./db";
 import { markPhotoDone } from "./outbox";
 import { readPhotoFile } from "../native/photoFiles";
 import { isOnline, onNetworkChange, initNetwork } from "../native/network";
@@ -165,6 +165,53 @@ async function drainNotes(): Promise<void> {
   }
 }
 
+async function syncOneCaseEvent(row: OutboxCaseEvent): Promise<void> {
+  await db.outboxCaseEvents.update(row.id, { status: "inflight" });
+  try {
+    if (row.action === "openCase") {
+      await convex.mutation(api.cases.create, {
+        propertyId: row.propertyId as Id<"properties">,
+        caseType: (row.payload.caseType ?? "violation") as
+          | "violation"
+          | "architectural"
+          | "maintenance"
+          | "complaint"
+          | "inquiry"
+          | "other",
+        title: row.payload.title ?? "Field observation",
+        description: row.payload.description || undefined,
+        source: "inspection",
+      });
+    } else {
+      await convex.mutation(api.cases.addNote, {
+        caseId: row.payload.caseId as Id<"cases">,
+        text: row.payload.text ?? "",
+        visibility: (row.payload.visibility ?? "shared") as "shared" | "internal",
+      });
+    }
+    await db.outboxCaseEvents.delete(row.id);
+  } catch (e) {
+    const attempts = row.attempts + 1;
+    await db.outboxCaseEvents.update(row.id, {
+      status: "failed",
+      attempts,
+      nextAttemptAt: backoff(attempts),
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+/** Case events sync BEFORE photos so a field-opened case exists when photo events attach. */
+async function drainCaseEvents(): Promise<void> {
+  const now = Date.now();
+  const rows = (await db.outboxCaseEvents.where("status").notEqual("done").toArray())
+    .filter((r) => r.status !== "inflight" && r.nextAttemptAt <= now)
+    .sort((a, b) => a.createdAt - b.createdAt);
+  for (const row of rows) {
+    await syncOneCaseEvent(row);
+  }
+}
+
 let running = false;
 
 /** Drain the outbox once. Safe to call repeatedly; no-op when offline or already running. */
@@ -173,6 +220,7 @@ export async function syncNow(): Promise<void> {
   running = true;
   setStatus({ syncing: true, lastError: null });
   try {
+    await drainCaseEvents();
     await drainNotes();
     await drainPhotos();
     setStatus({ lastSyncAt: Date.now() });

@@ -50,11 +50,28 @@ export interface PhotoBlob {
   blob: Blob;
 }
 
+export type OutboxCaseEventAction = "openCase" | "addNote";
+
+/** A case action captured offline (open a case / add an observation), synced before photos. */
+export interface OutboxCaseEvent {
+  id: string; // uuid
+  propertyId: string;
+  action: OutboxCaseEventAction;
+  /** openCase: { caseType, title }; addNote: { caseId, text, visibility }. */
+  payload: Record<string, string>;
+  status: OutboxStatus;
+  attempts: number;
+  error?: string;
+  createdAt: number;
+  nextAttemptAt: number;
+}
+
 class HappierBlockDB extends Dexie {
   cache!: Table<CacheEntry, string>;
   outboxPhotos!: Table<OutboxPhoto, string>;
   outboxNotes!: Table<OutboxNote, string>;
   photoBlobs!: Table<PhotoBlob, string>;
+  outboxCaseEvents!: Table<OutboxCaseEvent, string>;
 
   constructor() {
     super("happier-block-offline");
@@ -63,6 +80,10 @@ class HappierBlockDB extends Dexie {
       outboxPhotos: "id, propertyId, status, nextAttemptAt",
       outboxNotes: "propertyId, status, nextAttemptAt",
       photoBlobs: "ref",
+    });
+    // v2: case-event outbox (additive; keep version(1) untouched).
+    this.version(2).stores({
+      outboxCaseEvents: "id, propertyId, status, nextAttemptAt",
     });
   }
 }

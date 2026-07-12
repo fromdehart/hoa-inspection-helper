@@ -1,4 +1,4 @@
-import { db, type OutboxPhoto, type OutboxPhotoKind } from "./db";
+import { db, type OutboxCaseEventAction, type OutboxPhoto, type OutboxPhotoKind } from "./db";
 import { savePhotoFile, deletePhotoFile } from "../native/photoFiles";
 
 /**
@@ -57,10 +57,50 @@ export async function enqueueNote(input: {
   });
 }
 
+/**
+ * Enqueue a case action captured in the field (open a case / add an
+ * observation). The sync manager drains these BEFORE photos so the case exists
+ * by the time photo events attach to it.
+ */
+export async function enqueueCaseEvent(input: {
+  propertyId: string;
+  action: OutboxCaseEventAction;
+  payload: Record<string, string>;
+}): Promise<string> {
+  const id = crypto.randomUUID();
+  await db.outboxCaseEvents.add({
+    id,
+    propertyId: input.propertyId,
+    action: input.action,
+    payload: input.payload,
+    status: "pending",
+    attempts: 0,
+    createdAt: Date.now(),
+    nextAttemptAt: 0,
+  });
+  return id;
+}
+
+/** Pending (not yet synced) photos for one property — for queued-tile previews. */
+export async function listPendingPhotosForProperty(
+  propertyId: string,
+): Promise<Array<{ id: string; section: string }>> {
+  const rows = await db.outboxPhotos
+    .where("propertyId")
+    .equals(propertyId)
+    .and((r) => r.status !== "done" && r.kind === "inspectorPhoto")
+    .toArray();
+  return rows.map((r) => ({ id: r.id, section: r.section }));
+}
+
 export async function pendingPhotoCount(): Promise<number> {
   return db.outboxPhotos.where("status").notEqual("done").count();
 }
 
 export async function pendingNoteCount(): Promise<number> {
   return db.outboxNotes.where("status").notEqual("done").count();
+}
+
+export async function pendingCaseEventCount(): Promise<number> {
+  return db.outboxCaseEvents.where("status").notEqual("done").count();
 }

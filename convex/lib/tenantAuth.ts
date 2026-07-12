@@ -1,7 +1,8 @@
 import type { Id } from "../_generated/dataModel";
 import { getActingHoaId, isPlatformAdmin } from "./platformAuth";
+import { getCompanyActingHoa } from "./companyAuth";
 
-type MembershipRole = "admin" | "inspector";
+type MembershipRole = "admin" | "inspector" | "board";
 
 type QueryBuilder = {
   withIndex: (indexName: string, fn: (q: { eq: (field: string, value: unknown) => unknown }) => unknown) => {
@@ -31,6 +32,8 @@ export type ViewerContext = {
   role: MembershipRole;
   isPlatformAdmin: boolean;
   isActingAsAdmin: boolean;
+  /** Set when isActingAsAdmin: which layer granted the acting session. */
+  actingVia?: "platform" | "company";
 };
 
 /** For public queries: no identity, membership, or active HOA → null (no throw). */
@@ -50,7 +53,27 @@ export async function tryGetViewerContext(ctx: CtxWithDbAndAuth): Promise<Viewer
       role: "admin",
       isPlatformAdmin: true,
       isActingAsAdmin: true,
+      actingVia: "platform",
     };
+  }
+
+  // Management-company manager acting as an HOA in their portfolio. Company
+  // managers have NO userHoaMemberships rows; getCompanyActingHoa re-validates
+  // portfolio scope on every read (fail-closed: null → falls through to the
+  // normal membership lookup, which will also be null for company staff).
+  const companyActing = await getCompanyActingHoa(ctx, identity.subject);
+  if (companyActing) {
+    const hoa = await ctx.db.get(companyActing.hoaId);
+    if (hoa && hoa.status === "active") {
+      return {
+        clerkUserId: identity.subject,
+        hoaId: companyActing.hoaId,
+        role: "admin",
+        isPlatformAdmin: platformAdmin,
+        isActingAsAdmin: true,
+        actingVia: "company",
+      };
+    }
   }
 
   const membership = (await ctx.db

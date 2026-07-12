@@ -13,6 +13,16 @@ export default {
     },
     extend: {
       colors: {
+        petrol: {
+          DEFAULT: "#146b7a",
+          soft: "#e9f1f2",
+        },
+        paper: "#f4f4f0",
+        ink: {
+          DEFAULT: "#222831",
+          2: "#6d7480",
+        },
+        overdue: "#b8422c",
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

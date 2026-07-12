@@ -1041,31 +1041,29 @@ export default function LetterExport() {
     : 0;
 
   return (
-    <div className="min-h-screen bg-[#f8f7ff]">
-      <div className="gradient-admin px-4 pt-8 pb-5">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+    <div className="min-h-screen bg-paper">
+      <div className="border-b bg-white px-4 pb-4 pt-5">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 className="font-extrabold text-white text-lg">Letter Review & Export</h1>
-            <p className="text-sm text-purple-100 mt-1">
-              Review bullets and notes, then download letters as PDFs.
+            <button
+              type="button"
+              className="text-xs font-semibold text-petrol hover:underline"
+              onClick={() => navigate("/admin/walkthrough")}
+            >
+              ‹ Walkthrough
+            </button>
+            <h1 className="text-lg font-bold">Letter review &amp; export</h1>
+            <p className="mt-0.5 text-sm text-ink-2">
+              Review bullets, generate letters, then export PDFs.
             </p>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <button
-              type="button"
-              className="text-sm bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-full border border-white/30 transition-colors"
-              onClick={() => navigate("/admin/dashboard")}
-            >
-              Dashboard
-            </button>
-            <button
-              type="button"
-              className="text-sm bg-white/10 hover:bg-white/20 text-white/80 px-3 py-1.5 rounded-full border border-white/20 transition-colors"
-              onClick={() => void signOut({ redirectUrl: "/" })}
-            >
-              Logout
-            </button>
-          </div>
+          <button
+            type="button"
+            className="rounded-lg border bg-white px-3 py-1.5 text-sm font-semibold text-ink-2 hover:bg-paper"
+            onClick={() => void signOut({ redirectUrl: "/" })}
+          >
+            Logout
+          </button>
         </div>
       </div>
 

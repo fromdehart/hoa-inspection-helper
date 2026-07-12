@@ -2,6 +2,8 @@ import { action, internalMutation, internalQuery, mutation, query } from "./_gen
 import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import { requireViewerRole } from "./lib/tenantAuth";
+import { findOpenViolationCase } from "./cases";
+import { logCaseEvent } from "./lib/caseEvents";
 
 export const listByProperty = query({
   args: { propertyId: v.id("properties") },
@@ -138,6 +140,22 @@ export const create = mutation({
     });
     if (property?.status === "notStarted") {
       await ctx.db.patch(args.propertyId, { status: "inProgress" });
+    }
+
+    // Mirror into the case timeline when the property has an open violation case.
+    const openCase = await findOpenViolationCase(ctx, args.propertyId);
+    if (openCase) {
+      await logCaseEvent(ctx, {
+        hoaId: openCase.hoaId,
+        caseId: openCase._id,
+        propertyId: args.propertyId,
+        type: "photoAttached",
+        actorRole: viewer.role === "inspector" ? "inspector" : "admin",
+        actorClerkUserId: viewer.clerkUserId,
+        summary: `Inspection photo added (${args.section})`,
+        visibility: "shared",
+        photoId,
+      });
     }
     return photoId;
   },

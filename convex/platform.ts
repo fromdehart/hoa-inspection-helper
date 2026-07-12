@@ -191,6 +191,31 @@ export const setHoaStatus = mutation({
   },
 });
 
+/** Toggle a per-HOA feature flag (e.g. "cases", "emailIntake"). Platform admin only. */
+export const setFeatureFlag = mutation({
+  args: {
+    hoaId: v.id("hoas"),
+    flag: v.union(v.literal("cases"), v.literal("emailIntake")),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await requirePlatformAdmin(ctx);
+    const hoa = await ctx.db.get(args.hoaId);
+    if (!hoa) throw new Error("Neighborhood not found.");
+    const current = hoa.featureFlags ?? [];
+    const next = args.enabled
+      ? current.includes(args.flag)
+        ? current
+        : [...current, args.flag]
+      : current.filter((f) => f !== args.flag);
+    await ctx.db.patch(args.hoaId, {
+      featureFlags: next,
+      updatedAt: Date.now(),
+    });
+    return { featureFlags: next };
+  },
+});
+
 export const setActingHoa = mutation({
   args: { hoaId: v.id("hoas") },
   handler: async (ctx, args) => {

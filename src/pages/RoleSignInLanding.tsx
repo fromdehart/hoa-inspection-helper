@@ -80,6 +80,42 @@ export default function RoleSignInLanding() {
             <span className="ml-auto text-white/60 group-hover:translate-x-1 transition-transform text-xl">→</span>
           </div>
         </button>
+
+        <button
+          type="button"
+          className="btn-bounce w-full rounded-2xl p-5 text-left shadow-xl border border-white/20 bg-white/10 group"
+          onClick={() => {
+            clearSignInReturnPath();
+            navigate("/board");
+          }}
+        >
+          <div className="flex items-center gap-4">
+            <span className="text-4xl">🏛️</span>
+            <div>
+              <p className="text-white font-bold text-xl">Board Member</p>
+              <p className="text-violet-200 text-sm">Read-only case oversight</p>
+            </div>
+            <span className="ml-auto text-white/60 group-hover:translate-x-1 transition-transform text-xl">→</span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="btn-bounce w-full rounded-2xl p-5 text-left shadow-xl border border-white/20 bg-white/10 group"
+          onClick={() => {
+            clearSignInReturnPath();
+            navigate("/portfolio");
+          }}
+        >
+          <div className="flex items-center gap-4">
+            <span className="text-4xl">🏢</span>
+            <div>
+              <p className="text-white font-bold text-xl">Management Company</p>
+              <p className="text-sky-200 text-sm">Your whole portfolio in one place</p>
+            </div>
+            <span className="ml-auto text-white/60 group-hover:translate-x-1 transition-transform text-xl">→</span>
+          </div>
+        </button>
       </div>
 
       <p className="mt-10 text-white/20 text-xs">Happier Block v{ONE_SHOT_VERSION}</p>

@@ -2,7 +2,7 @@ import { internalMutation, internalQuery, query, mutation } from "./_generated/s
 import { v } from "convex/values";
 import { requireViewerRole, tryGetViewerContext } from "./lib/tenantAuth";
 
-const ROLE_VALIDATOR = v.union(v.literal("admin"), v.literal("inspector"));
+const ROLE_VALIDATOR = v.union(v.literal("admin"), v.literal("inspector"), v.literal("board"));
 
 /**
  * HOA membership attribution: prefers `fullName`, then a readable form of the email local-part (no domain).
@@ -54,11 +54,11 @@ export const list = query({
   },
 });
 
-/** Display names for attribution (no emails); same HOA as viewer. */
+/** Display names for attribution (no emails); same HOA as viewer. Board: read-only timeline attribution. */
 export const displayNamesByClerkIds = query({
   args: { clerkUserIds: v.array(v.string()) },
   handler: async (ctx, args) => {
-    const viewer = await requireViewerRole(ctx, ["admin", "inspector"]);
+    const viewer = await requireViewerRole(ctx, ["admin", "inspector", "board"]);
     const ids = [...new Set(args.clerkUserIds.filter(Boolean))];
     if (ids.length === 0) return {} as Record<string, string>;
 

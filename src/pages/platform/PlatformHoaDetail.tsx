@@ -23,6 +23,9 @@ function PlatformHoaDetailContent() {
   const assignHoaAdmin = useAction(api.platformNode.assignHoaAdmin);
   const setActingHoa = useMutation(api.platform.setActingHoa);
   const setHoaStatus = useMutation(api.platform.setHoaStatus);
+  const setFeatureFlag = useMutation(api.platform.setFeatureFlag);
+  const companies = useQuery(api.companyAdmin.listCompanies, {});
+  const assignHoaToCompany = useMutation(api.companyAdmin.assignHoaToCompany);
 
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
@@ -62,7 +65,7 @@ function PlatformHoaDetailContent() {
     setSaving(true);
     try {
       await setActingHoa({ hoaId: hoaId as Id<"hoas"> });
-      navigate("/admin/dashboard");
+      navigate("/admin/properties");
     } catch (err) {
       flash(String(err));
       setSaving(false);
@@ -81,6 +84,42 @@ function PlatformHoaDetailContent() {
   };
 
   const admins = (hoa?.members ?? []).filter((m) => m.role === "admin");
+
+  const FEATURE_FLAGS: Array<{ flag: "cases" | "emailIntake"; label: string; description: string }> = [
+    {
+      flag: "cases",
+      label: "Case tracking",
+      description: "Household case records, escalation ladder, and audit-trail timeline.",
+    },
+    {
+      flag: "emailIntake",
+      label: "Email intake",
+      description: "Cc/forward emails to build case records automatically (requires case tracking).",
+    },
+  ];
+
+  const handleToggleFlag = async (flag: "cases" | "emailIntake", enabled: boolean) => {
+    if (!hoaId) return;
+    try {
+      await setFeatureFlag({ hoaId: hoaId as Id<"hoas">, flag, enabled });
+      flash(`${enabled ? "Enabled" : "Disabled"} ${flag}.`);
+    } catch (err) {
+      flash(String(err));
+    }
+  };
+
+  const handleAssignCompany = async (companyId: string) => {
+    if (!hoaId) return;
+    try {
+      await assignHoaToCompany({
+        hoaId: hoaId as Id<"hoas">,
+        companyId: (companyId || undefined) as Id<"managementCompanies"> | undefined,
+      });
+      flash(companyId ? "Assigned to company portfolio." : "Removed from company portfolio.");
+    } catch (err) {
+      flash(String(err));
+    }
+  };
 
   return (
       <div className="min-h-screen bg-[#f0f4ff]">
@@ -122,6 +161,66 @@ function PlatformHoaDetailContent() {
               >
                 Mark {hoa.status === "active" ? "inactive" : "active"}
               </button>
+            </section>
+          )}
+
+          {hoa && (
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold text-gray-800">Management company</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Assigning this neighborhood to a company puts it in that firm's{" "}
+                <Link to="/platform/companies" className="text-violet-600 hover:underline">
+                  portfolio
+                </Link>
+                .
+              </p>
+              <select
+                value={hoa.managementCompanyId ?? ""}
+                onChange={(e) => void handleAssignCompany(e.target.value)}
+                className="mt-3 rounded-lg border border-gray-200 px-3 py-2 text-sm"
+              >
+                <option value="">— No company —</option>
+                {(companies ?? []).map((c) => (
+                  <option key={c._id} value={c._id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </section>
+          )}
+
+          {hoa && (
+            <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-bold text-gray-800">Feature flags</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Roll features out per neighborhood. Existing workflows are unaffected while a flag is off.
+              </p>
+              <ul className="mt-4 space-y-3">
+                {FEATURE_FLAGS.map(({ flag, label, description }) => {
+                  const enabled = (hoa.featureFlags ?? []).includes(flag);
+                  return (
+                    <li key={flag} className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{label}</p>
+                        <p className="text-xs text-gray-500">{description}</p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={enabled}
+                        onClick={() => void handleToggleFlag(flag, !enabled)}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                          enabled
+                            ? "bg-green-100 text-green-800 hover:bg-green-200"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                      >
+                        {enabled ? "Enabled" : "Disabled"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </section>
           )}
 

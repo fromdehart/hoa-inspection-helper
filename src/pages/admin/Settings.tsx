@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, type RefObject } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -16,6 +15,11 @@ import {
   fileToBase64,
   looksLikeRawPdfPayload,
 } from "@/lib/extractPdfText";
+import { WorkflowEditor } from "@/components/cases/WorkflowEditor";
+import { EmailIntakeSettings } from "@/components/cases/EmailIntakeSettings";
+import AdminShell from "@/components/admin/AdminShell";
+import { ImportExportCard } from "@/components/admin/ImportExportCard";
+import { TeamSection } from "@/components/admin/TeamSection";
 
 /** Editable letter body — only `templateText`; never fall back to upload `parsedText`. */
 function editorBodyFromStoredTemplate(doc: { templateText?: string } | null | undefined): string {
@@ -24,7 +28,7 @@ function editorBodyFromStoredTemplate(doc: { templateText?: string } | null | un
 }
 
 export default function Settings() {
-  const navigate = useNavigate();
+  const settingsViewer = useQuery(api.tenancy.viewerContext, {});
   const [uploadingViolationTemplate, setUploadingViolationTemplate] = useState(false);
   const [uploadingNoViolationsTemplate, setUploadingNoViolationsTemplate] = useState(false);
   const [violationTemplateErr, setViolationTemplateErr] = useState("");
@@ -261,23 +265,17 @@ export default function Settings() {
   }, [arcReviewSettings, reviewPosture, reviewGuidance, showArcOnPropertyPage, setArcReviewSettings]);
 
   return (
-    <div className="min-h-screen bg-[#f8f7ff]">
-      <div className="gradient-admin px-4 pt-8 pb-5">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            className="text-sm text-purple-100 hover:text-white font-medium transition-colors"
-            onClick={() => navigate("/admin/dashboard")}
-          >
-            ← Dashboard
-          </button>
-          <h1 className="font-extrabold text-white text-xl">⚙️ Settings</h1>
-          <div className="w-20" />
+    <AdminShell active="settings">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <h1 className="text-lg font-bold">Settings</h1>
+          <p className="text-xs text-ink-2">
+            Letter template, team, utilities, ARC rules, and reference docs
+          </p>
         </div>
-        <p className="text-purple-200 text-xs mt-2 text-center">Letter templates, ARC rules, and reference docs</p>
-      </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-8">
+        <ImportExportCard hoaSlug={settingsViewer?.hoaSlug} />
+        <TeamSection />
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-lg font-bold text-gray-800">Violation letter template</h2>
@@ -489,6 +487,24 @@ export default function Settings() {
           )}
         </section>
 
+        {settingsViewer?.features?.includes("cases") && (
+          <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+            <h2 className="text-lg font-bold text-gray-800">Case workflow</h2>
+            <p className="text-xs text-muted-foreground">
+              The escalation ladder cases follow, per case type. Stage gates enforce due-process
+              steps (notice sent, hearing decided, photo evidence) before a case can advance.
+            </p>
+            <WorkflowEditor />
+          </section>
+        )}
+
+        {settingsViewer?.features?.includes("emailIntake") && (
+          <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+            <h2 className="text-lg font-bold text-gray-800">Email intake</h2>
+            <EmailIntakeSettings hoaSlug={settingsViewer.hoaSlug} />
+          </section>
+        )}
+
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
           <h2 className="text-lg font-bold text-gray-800">ARC review behavior</h2>
           <p className="text-xs text-muted-foreground">
@@ -683,6 +699,6 @@ export default function Settings() {
           )}
         </section>
       </div>
-    </div>
+    </AdminShell>
   );
 }

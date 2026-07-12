@@ -11,6 +11,7 @@ type HomeProperty = {
   status: string;
   hoaId: Id<"hoas"> | null;
   hoaName: string;
+  casesEnabled?: boolean;
 };
 
 type HomeContextValue = {
@@ -28,9 +29,12 @@ export function useHomeProperty(): HomeContextValue {
   return ctx;
 }
 
-const NAV = [
+type NavItem = { to: string; label: string; icon: string; end: boolean; requiresCases?: boolean };
+
+const NAV: NavItem[] = [
   { to: "/home", label: "Home", icon: "🏠", end: true },
   { to: "/home/inspection", label: "Inspection", icon: "📋", end: false },
+  { to: "/home/cases", label: "Cases", icon: "🗂️", end: false, requiresCases: true },
   { to: "/home/rules", label: "Rules", icon: "📖", end: false },
   { to: "/home/chat", label: "Ask AI", icon: "💬", end: false },
   { to: "/home/request", label: "Request", icon: "🛠️", end: false },
@@ -104,7 +108,7 @@ export default function HomeLayout() {
           className="fixed bottom-0 inset-x-0 z-10 bg-white border-t border-slate-200 flex"
           style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          {NAV.map((item) => (
+          {NAV.filter((item) => !item.requiresCases || selected?.casesEnabled).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

@@ -2,6 +2,7 @@ import { mutation, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { buildLetterHtmlSync, DEFAULT_LETTER_TEMPLATE, DEFAULT_NO_VIOLATIONS_LETTER_TEMPLATE } from "./letterBody";
+import { DEFAULT_WORKFLOWS } from "./lib/defaultWorkflows";
 
 const DEMO_SLUG = "demo-happier-block";
 const DEMO_NAME = "Demo HOA (Happier Block)";
@@ -195,6 +196,27 @@ async function ensureHoaAiConfig(ctx: MutationCtx, hoaId: Id<"hoas">, now: numbe
   return { aiConfigRowsInserted: rows };
 }
 
+async function ensureCaseWorkflows(ctx: MutationCtx, hoaId: Id<"hoas">, now: number) {
+  let inserted = 0;
+  for (const caseType of Object.keys(DEFAULT_WORKFLOWS) as Array<keyof typeof DEFAULT_WORKFLOWS>) {
+    const existing = await ctx.db
+      .query("caseWorkflows")
+      .withIndex("by_hoa_type", (q) => q.eq("hoaId", hoaId).eq("caseType", caseType))
+      .first();
+    if (existing) continue;
+    await ctx.db.insert("caseWorkflows", {
+      hoaId,
+      caseType,
+      name: DEFAULT_WORKFLOWS[caseType].name,
+      stages: DEFAULT_WORKFLOWS[caseType].stages,
+      isActive: true,
+      updatedAt: now,
+    });
+    inserted++;
+  }
+  return { caseWorkflowsInserted: inserted };
+}
+
 async function enrichDemoProperties(ctx: MutationCtx, hoaId: Id<"hoas">, now: number) {
   const templateDoc = await ctx.db
     .query("templates")
@@ -378,6 +400,7 @@ export const seedDemoHappierBlock = mutation({
     const tpl = await ensureHoaTemplates(ctx, hoa._id, now);
     const noViolationsTpl = await ensureNoViolationsLetterTemplate(ctx, hoa._id, now);
     const ai = await ensureHoaAiConfig(ctx, hoa._id, now);
+    const workflows = await ensureCaseWorkflows(ctx, hoa._id, now);
     const enrich = await enrichDemoProperties(ctx, hoa._id, now);
 
     const email = (args.adminEmail ?? "mdehart.ph@gmail.com").trim().toLowerCase();
@@ -400,6 +423,7 @@ export const seedDemoHappierBlock = mutation({
       templates: tpl,
       noViolationsTemplate: noViolationsTpl,
       aiConfig: ai,
+      caseWorkflows: workflows,
       enrich,
       warning:
         "If this Clerk user already had another HOA membership, it was moved to the demo HOA (single membership row per user).",

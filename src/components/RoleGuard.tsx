@@ -94,7 +94,7 @@ export default function RoleGuard({ allow, children }: RoleGuardProps) {
   return (
     <>
       {viewer.isActingAsAdmin && viewer.hoaName && (
-        <PlatformActingBanner hoaName={viewer.hoaName} />
+        <PlatformActingBanner hoaName={viewer.hoaName} actingVia={viewer.actingVia} />
       )}
       {children}
     </>
