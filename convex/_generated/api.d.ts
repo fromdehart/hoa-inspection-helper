@@ -63,6 +63,7 @@ import type * as lib_platformAuth from "../lib/platformAuth.js";
 import type * as lib_propertyStatus from "../lib/propertyStatus.js";
 import type * as lib_propertyStatusRollup from "../lib/propertyStatusRollup.js";
 import type * as lib_stewardAutonomy from "../lib/stewardAutonomy.js";
+import type * as lib_stewardPipeline from "../lib/stewardPipeline.js";
 import type * as lib_stewardPlaybooks from "../lib/stewardPlaybooks.js";
 import type * as lib_tenantAuth from "../lib/tenantAuth.js";
 import type * as llm from "../llm.js";
@@ -146,6 +147,7 @@ declare const fullApi: ApiFromModules<{
   "lib/propertyStatus": typeof lib_propertyStatus;
   "lib/propertyStatusRollup": typeof lib_propertyStatusRollup;
   "lib/stewardAutonomy": typeof lib_stewardAutonomy;
+  "lib/stewardPipeline": typeof lib_stewardPipeline;
   "lib/stewardPlaybooks": typeof lib_stewardPlaybooks;
   "lib/tenantAuth": typeof lib_tenantAuth;
   llm: typeof llm;

@@ -9,6 +9,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { isFeatureEnabled } from "./lib/featureFlags";
 import { effectiveAutonomy } from "./lib/stewardAutonomy";
+import { draftWithReview } from "./lib/stewardPipeline";
 
 /**
  * The Chase duty (PRD §8.5): drain `awaiting_agent` findings into drafted
@@ -29,7 +30,6 @@ import { effectiveAutonomy } from "./lib/stewardAutonomy";
  */
 
 const CHASE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_ATTEMPTS = 2;
 
 // ---------------------------------------------------------------------------
 // Work gathering (queries) and persistence (mutations) — plain runtime, no LLM.
@@ -194,7 +194,7 @@ export const recordProposal = internalMutation({
 });
 
 // ---------------------------------------------------------------------------
-// The two-pass LLM pipeline.
+// Context, prompts, and prechecks — the pipeline loop lives in lib/stewardPipeline.
 // ---------------------------------------------------------------------------
 
 type ChaseItem = {
@@ -235,20 +235,6 @@ before it may proceed. You see the same context the Steward saw, and the draft. 
 4. Professional, courteous tone; 40–160 words; plain text.
 5. No personal data beyond the property address and case facts.
 Return STRICT JSON: {"verdict": "approve"|"reject", "reasons": ["..."]}`;
-
-function parseJson<T>(text: string): T | null {
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    try {
-      return JSON.parse(match[0]) as T;
-    } catch {
-      return null;
-    }
-  }
-}
 
 /** Deterministic prechecks — run in code before spending a Reviewer call (PRD §11.2). */
 function precheck(draft: { subject: string; body: string }, item: ChaseItem): string | null {
@@ -298,73 +284,27 @@ async function chaseOne(
   item: ChaseWorkItem,
   autonomyLevel: "L1" | "L2" | "L3",
 ): Promise<void> {
-        const context = contextBlock(hoa.hoaName, item);
-        let attempts = 0;
-        let rejectionFeedback = "";
-        let final: { subject: string; body: string } | null = null;
-        let lastReasons = "";
-        let model = "";
+  const context = contextBlock(hoa.hoaName, item);
+  const result = await draftWithReview(ctx, {
+    stewardSystem: STEWARD_SYSTEM.replace("{HOA name}", hoa.hoaName),
+    reviewerSystem: REVIEWER_SYSTEM,
+    context,
+    precheck: (draft) => precheck(draft, item),
+  });
 
-        while (attempts < MAX_ATTEMPTS && !final) {
-          attempts += 1;
-
-          const stewardRes = await ctx.runAction(internal.llm.generateText, {
-            role: "steward",
-            systemPrompt: STEWARD_SYSTEM.replace("{HOA name}", hoa.hoaName),
-            prompt:
-              context +
-              (rejectionFeedback
-                ? `\n\nYour previous draft was rejected by review for these reasons — fix them:\n${rejectionFeedback}`
-                : "") +
-              "\n\nWrite the JSON now.",
-            temperature: 0.4,
-            textFormatJsonObject: true,
-          });
-          model = stewardRes.model;
-          const draft = parseJson<{ subject: string; body: string }>(stewardRes.text);
-          if (!draft?.subject || !draft?.body) {
-            lastReasons = "Steward returned unparseable output";
-            rejectionFeedback = "Output was not valid JSON with subject and body.";
-            continue;
-          }
-
-          const precheckFailure = precheck(draft, item);
-          if (precheckFailure) {
-            lastReasons = `precheck: ${precheckFailure}`;
-            rejectionFeedback = precheckFailure;
-            continue;
-          }
-
-          const reviewRes = await ctx.runAction(internal.llm.generateText, {
-            role: "reviewer",
-            systemPrompt: REVIEWER_SYSTEM,
-            prompt: `CONTEXT:\n${context}\n\nDRAFT SUBJECT: ${draft.subject}\n\nDRAFT BODY:\n${draft.body}\n\nReturn the JSON verdict now.`,
-            temperature: 0,
-            textFormatJsonObject: true,
-          });
-          const review = parseJson<{ verdict: string; reasons?: string[] }>(reviewRes.text);
-          if (review?.verdict === "approve") {
-            final = draft;
-            lastReasons = (review.reasons ?? []).join("; ");
-          } else {
-            lastReasons = (review?.reasons ?? ["Reviewer returned no verdict"]).join("; ");
-            rejectionFeedback = lastReasons;
-          }
-        }
-
-        await ctx.runMutation(internal.stewardChase.recordProposal, {
-          hoaId: hoa.hoaId,
-          findingId: item.findingId,
-          caseId: item.caseId,
-          propertyId: item.propertyId,
-          autonomyLevel,
-          draftSubject: final?.subject ?? "(no draft survived review)",
-          draftBody: final?.body ?? "",
-          contextSummary: context,
-          reviewerVerdict: final ? "approved" : "rejected",
-          verdictReasons: lastReasons || undefined,
-          attempts,
-          needsHuman: !final,
-          model,
-        });
+  await ctx.runMutation(internal.stewardChase.recordProposal, {
+    hoaId: hoa.hoaId,
+    findingId: item.findingId,
+    caseId: item.caseId,
+    propertyId: item.propertyId,
+    autonomyLevel,
+    draftSubject: result.draft?.subject ?? "(no draft survived review)",
+    draftBody: result.draft?.body ?? "",
+    contextSummary: context,
+    reviewerVerdict: result.draft ? "approved" : "rejected",
+    verdictReasons: result.reasons || undefined,
+    attempts: result.attempts,
+    needsHuman: !result.draft,
+    model: result.model,
+  });
 }
