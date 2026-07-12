@@ -18,6 +18,14 @@ crons.daily(
   internal.steward.dailySweep,
 );
 
+// Chase duty: drain awaiting_agent findings into Reviewer-verified drafts.
+// Runs after the sweep so it always works from a fresh queue.
+crons.daily(
+  "steward daily chase",
+  { hourUTC: 11, minuteUTC: 30 },
+  internal.stewardChase.run,
+);
+
 // Weekly digest rollup, Monday mornings.
 crons.weekly(
   "steward weekly digest",

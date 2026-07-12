@@ -741,6 +741,50 @@ export default defineSchema({
     .index("by_hoa_status", ["hoaId", "status"])
     .index("by_hoa_dedupe", ["hoaId", "dedupeKey"]),
 
+  /**
+   * Steward output awaiting (or past) the board's decision (PRD §6.1): a
+   * fully drafted action produced by the Steward pass and verified by the
+   * Reviewer before it ever lands here. One active proposal per finding;
+   * a decided proposal starts a cooldown before the Steward re-drafts.
+   */
+  stewardProposals: defineTable({
+    hoaId: v.id("hoas"),
+    findingId: v.id("findings"),
+    caseId: v.optional(v.id("cases")),
+    propertyId: v.optional(v.id("properties")),
+    /** The autonomy action type this proposal executes as (lib/stewardAutonomy.ts). */
+    actionType: v.string(),
+    autonomyLevel: v.union(
+      v.literal("L0"),
+      v.literal("L1"),
+      v.literal("L2"),
+      v.literal("L3"),
+    ),
+    draftSubject: v.optional(v.string()),
+    draftBody: v.string(),
+    /** What the Steward saw — shown beside the draft so approval is informed. */
+    contextSummary: v.string(),
+    reviewerVerdict: v.union(v.literal("approved"), v.literal("rejected")),
+    verdictReasons: v.optional(v.string()),
+    /** Steward attempts consumed (Reviewer rejections trigger bounded retries). */
+    attempts: v.number(),
+    status: v.union(
+      v.literal("pending_approval"),
+      v.literal("approved"),
+      v.literal("rejected"),
+      v.literal("needs_human"),
+      v.literal("expired"),
+    ),
+    runId: v.id("agentRuns"),
+    decidedByClerkUserId: v.optional(v.string()),
+    decidedAt: v.optional(v.number()),
+    /** Body as approved (the board may edit before approving). */
+    finalBody: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_hoa_status", ["hoaId", "status"])
+    .index("by_finding", ["findingId"]),
+
   /** One row per agent invocation (both agents), whether or not it acted (PRD §8.2). */
   agentRuns: defineTable({
     hoaId: v.id("hoas"),

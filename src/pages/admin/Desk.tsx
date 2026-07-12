@@ -188,6 +188,99 @@ function NewMotionForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+function ProposalCard({ proposal }: { proposal: Doc<"stewardProposals"> }) {
+  const approve = useMutation(api.proposals.approve);
+  const reject = useMutation(api.proposals.reject);
+  const [editing, setEditing] = useState(false);
+  const [body, setBody] = useState(proposal.draftBody);
+  const [showContext, setShowContext] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const failed = proposal.status === "needs_human";
+
+  return (
+    <div className={`rounded-lg border p-3 ${failed ? "border-overdue/40 bg-white" : "bg-paper"}`}>
+      <div className="flex items-baseline gap-2">
+        <Chip tone={failed ? "proc" : "wait"}>{failed ? "Needs human" : "Draft ready"}</Chip>
+        <p className="min-w-0 flex-1 truncate text-[13.5px] font-semibold">
+          {proposal.draftSubject || "Follow-up"}
+        </p>
+        <span className="flex-none text-xs text-ink-2">{timeAgo(proposal.createdAt)}</span>
+      </div>
+      {failed ? (
+        <p className="mt-1.5 text-xs text-ink-2">
+          The Reviewer rejected the Steward's draft {proposal.attempts}× — reasons:{" "}
+          {proposal.verdictReasons ?? "unknown"}. Handle this one yourself.
+        </p>
+      ) : editing ? (
+        <Textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={5}
+          className="mt-2 bg-white text-sm"
+        />
+      ) : (
+        <p className="mt-1.5 whitespace-pre-wrap text-[13px]">{proposal.draftBody}</p>
+      )}
+      <button
+        type="button"
+        className="mt-1.5 text-xs text-ink-2 hover:text-ink hover:underline"
+        onClick={() => setShowContext((s) => !s)}
+      >
+        {showContext ? "hide what the Steward saw" : "what the Steward saw ›"}
+      </button>
+      {showContext && (
+        <pre className="mt-1.5 overflow-x-auto rounded-lg border bg-white p-2 text-[11px] text-ink-2">
+          {proposal.contextSummary}
+        </pre>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {!failed && (
+          <>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const r = await approve({
+                    proposalId: proposal._id,
+                    editedBody: editing ? body : undefined,
+                  });
+                  try {
+                    await navigator.clipboard.writeText(
+                      `Subject: ${r.subject}\n\n${r.body}`,
+                    );
+                    setCopied(true);
+                  } catch {
+                    // Clipboard can fail (permissions); the note is on the case either way.
+                  }
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Approve{editing ? " edited" : ""} & copy
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
+              {editing ? "Discard edits" : "Edit"}
+            </Button>
+          </>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => void reject({ proposalId: proposal._id })}
+        >
+          {failed ? "Dismiss" : "Reject"}
+        </Button>
+        {copied && <span className="text-xs text-ink-2">Copied — paste it into an email to the PM.</span>}
+      </div>
+    </div>
+  );
+}
+
 function DeadlinesCard() {
   const deadlines = useQuery(api.deadlines.listForHoa, {});
   const add = useMutation(api.deadlines.add);
@@ -351,6 +444,7 @@ function AgendaCard() {
 export default function Desk() {
   const viewer = useQuery(api.tenancy.viewerContext);
   const findings = useQuery(api.findings.listOpen, {});
+  const proposals = useQuery(api.proposals.listPending, {});
   const openMotions = useQuery(api.motions.listForHoa, { status: "open" });
   const ratifiable = useQuery(api.motions.ratificationList, {});
   const activity = useQuery(api.steward.listRecentActions, { limit: 12 });
@@ -386,6 +480,26 @@ export default function Desk() {
 
         <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
           <div className="space-y-4">
+            {(proposals ?? []).length > 0 && (
+              <div className="rounded-xl border bg-white p-4">
+                <h2 className="text-[13px] font-bold">
+                  For your approval{" "}
+                  <span className="font-mono text-xs tabular-nums text-ink-2">
+                    · {(proposals ?? []).length}
+                  </span>
+                </h2>
+                <p className="mt-0.5 text-xs text-ink-2">
+                  Drafted by the Steward, verified by the Reviewer. Approving logs it on the
+                  case record and copies it for sending.
+                </p>
+                <div className="mt-2 space-y-2">
+                  {(proposals ?? []).map((p) => (
+                    <ProposalCard key={p._id} proposal={p} />
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border bg-white p-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-[13px] font-bold">Your vote</h2>
