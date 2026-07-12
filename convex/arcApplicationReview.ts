@@ -11,7 +11,6 @@ import {
 
 const MAX_REF_CHARS = 36_000;
 const MAX_APP_CHARS = 54_000;
-const AI_MODEL = "gpt-4.1-mini";
 
 const SYSTEM_PROMPT = `You are an assistant to an HOA Architecture Review Committee (ARC). You compare a homeowner's modification application to the HOA's reference materials (rules, guidelines, and example decisions).
 
@@ -151,12 +150,15 @@ Return the JSON object now.`;
 
   await ctx.runMutation(internal.arcApplications.internalSetReviewing, { submissionId });
 
-  const { text: rawText } = await ctx.runAction(internal.openai.generateText, {
-    systemPrompt: SYSTEM_PROMPT,
-    prompt: userMessage,
-    model: AI_MODEL,
-    textFormatJsonObject: true,
-  });
+  const { text: rawText, model: resolvedModel } = await ctx.runAction(
+    internal.llm.generateText,
+    {
+      systemPrompt: SYSTEM_PROMPT,
+      prompt: userMessage,
+      role: "arcReview",
+      textFormatJsonObject: true,
+    },
+  );
 
   if (!rawText?.trim()) {
     await ctx.runMutation(internal.arcApplications.internalFailReview, {
@@ -176,7 +178,7 @@ Return the JSON object now.`;
     submissionId,
     verdict: feedback.verdict,
     aiFeedbackJson: JSON.stringify(feedback),
-    aiModel: AI_MODEL,
+    aiModel: resolvedModel,
     promptHadTruncation,
   });
 

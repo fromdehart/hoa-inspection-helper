@@ -8,12 +8,11 @@ import { stageLabelFromWorkflow } from "./lib/copilotFormat";
 
 /**
  * Manager AI copilot. Follows the chat.ts triad: public action → auth via
- * internal query → rate-limit mutation → internal.openai.generateText →
+ * internal query → rate-limit mutation → internal.llm.generateText →
  * persist/return. All grounding comes from the manager's own portfolio data +
  * that HOA's parsed governing docs — never from unscoped inputs.
  */
 
-const COPILOT_MODEL = "gpt-4o-mini";
 const RATE_LIMIT = { limit: 40, windowMs: 60 * 60 * 1000, label: "copilot" };
 const MAX_DOC_CHARS = 24_000;
 
@@ -125,13 +124,13 @@ export const prioritizeDay = action({
       )
       .join("\n");
 
-    const { text } = await ctx.runAction(internal.openai.generateText, {
+    const { text } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt:
         "You write one-line action reasons for a community manager's prioritized worklist. " +
         'Return STRICT JSON: {"reasons": [{"caseId": "...", "reason": "..."}]} with one entry per input item, same order. ' +
         "Each reason ≤ 15 words, concrete (mention deadline/severity/stage), no fluff.",
       prompt: `Today is ${new Date(now).toISOString().slice(0, 10)}. Cases, already ranked:\n${listing}`,
-      model: COPILOT_MODEL,
+      role: "copilot",
       temperature: 0.2,
       textFormatJsonObject: true,
     });
@@ -236,7 +235,7 @@ export const draftStageNotice = action({
       caseId: args.caseId,
     });
 
-    const { text } = await ctx.runAction(internal.openai.generateText, {
+    const { text } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt:
         "You draft HOA notice letters for a community manager to review before sending. " +
         "Professional, firm but neighborly tone. Ground every rule reference in the provided governing documents and cite the section when possible. " +
@@ -247,7 +246,7 @@ export const draftStageNotice = action({
         `Case history:\n${context.timeline}\n\n` +
         `Governing documents (excerpts):\n${context.docCorpus || "(none on file)"}\n\n` +
         `Draft the ${context.stageLabel} notice for this case.`,
-      model: COPILOT_MODEL,
+      role: "copilot",
       temperature: 0.3,
     });
     if (!text) return { ok: false, error: "Drafting failed. Try again." };
@@ -279,14 +278,14 @@ export const draftHearingPacket = action({
         ? "Assemble a concise board hearing packet in markdown: 1) Case summary, 2) Chronology (from the history), 3) Relevant rules (cited from the documents), 4) Questions for the board. Facts only — no recommendation of outcome."
         : "Draft the written hearing decision letter (plain text). Include the case chronology in brief, the rule basis, and a placeholder [DECISION] where the board's outcome goes. The manager fills in the outcome.";
 
-    const { text } = await ctx.runAction(internal.openai.generateText, {
+    const { text } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt:
         "You prepare due-process hearing materials for an HOA. Accuracy over persuasion; never invent facts, rules, or outcomes.",
       prompt:
         `HOA: ${context.hoaName}\nProperty: ${context.address}\nCase: ${context.caseTitle}\n\n` +
         `Case history:\n${context.timeline}\n\n` +
         `Governing documents (excerpts):\n${context.docCorpus || "(none on file)"}\n\n${instruction}`,
-      model: COPILOT_MODEL,
+      role: "copilot",
       temperature: 0.2,
     });
     if (!text) return { ok: false, error: "Drafting failed. Try again." };
@@ -349,13 +348,13 @@ export const enforcementConsistency = action({
       return { ok: true, report: "Not enough violation cases yet to compare enforcement." };
     }
 
-    const { text } = await ctx.runAction(internal.openai.generateText, {
+    const { text } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt:
         "You audit HOA enforcement consistency (selective enforcement is a legal risk). " +
         "Compare cases of the same community + category: similar violations should progress and be fined similarly. " +
         "Output short markdown: a bullet per potential inconsistency (name the cases and why), or 'No notable inconsistencies found.' Do not invent cases.",
       prompt: `One case per line (community | category | title | stage | status | age | fines):\n${rows.join("\n")}`,
-      model: COPILOT_MODEL,
+      role: "copilot",
       temperature: 0.2,
     });
     if (!text) return { ok: false, error: "Analysis failed. Try again." };

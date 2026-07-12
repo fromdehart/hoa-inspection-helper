@@ -2,12 +2,7 @@
 
 import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
-
-const getApiKey = () => process.env.OPENAI_API_KEY!;
-
-function isReasoningModel(model: string): boolean {
-  return /^(o1|o3|o4)/.test(model);
-}
+import { openaiGenerate } from "./lib/llmProviders";
 
 const DEFAULT_MODEL = "gpt-4o";
 
@@ -32,28 +27,13 @@ function resolveModel(requested: string | undefined): string {
 }
 
 /**
- * Extract text from OpenAI Responses API response.
- * Handles nested output[].content[] with type "output_text"; returns "" on missing/unexpected shape.
- */
-function extractText(response: {
-  output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
-}): string {
-  try {
-    const parts =
-      response.output?.flatMap((o) => o.content ?? []) ?? [];
-    const texts = parts
-      .filter((c) => c.type === "output_text" && c.text != null)
-      .map((c) => c.text as string);
-    return texts.join("") ?? "";
-  } catch {
-    return "";
-  }
-}
-
-/**
- * INTERNAL ONLY. Not callable from the client — reach it through an authenticated
- * wrapper (inspectionBullets, arcApplicationReview, chat) so we never expose an
- * unauthenticated, cost-bearing OpenAI call. Model is allowlisted via resolveModel.
+ * DEPRECATED — new callers use `internal.llm.generateText` with a model ROLE
+ * (provider-swappable, PRD §11.1). Kept as a thin wrapper over the same
+ * provider implementation so existing behavior is unchanged.
+ *
+ * INTERNAL ONLY. Not callable from the client — reach it through an
+ * authenticated wrapper so we never expose an unauthenticated, cost-bearing
+ * LLM call. Model is allowlisted via resolveModel.
  */
 export const generateText = internalAction({
   args: {
@@ -67,77 +47,15 @@ export const generateText = internalAction({
     textFormatJsonObject: v.optional(v.boolean()),
   },
   handler: async (_ctx, args) => {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-      return { text: "", responseId: "" };
-    }
-    const model = resolveModel(args.model);
-    const isReasoning = isReasoningModel(model);
-
-    const input: Array<Record<string, unknown>> = [];
-    if (args.systemPrompt) {
-      if (isReasoning) {
-        input.push({
-          type: "message",
-          role: "developer",
-          content: [{ type: "input_text", text: args.systemPrompt }],
-        });
-      } else {
-        input.push({
-          type: "message",
-          role: "system",
-          content: [{ type: "input_text", text: args.systemPrompt }],
-        });
-      }
-    }
-    input.push({
-      type: "message",
-      role: "user",
-      content: [{ type: "input_text", text: args.prompt }],
+    return await openaiGenerate({
+      model: resolveModel(args.model),
+      prompt: args.prompt,
+      systemPrompt: args.systemPrompt,
+      temperature: args.temperature,
+      previousResponseId: args.previousResponseId,
+      reasoning: args.reasoning,
+      jsonObject: args.textFormatJsonObject,
     });
-
-    const body: Record<string, unknown> = {
-      model,
-      input,
-    };
-    if (args.textFormatJsonObject) {
-      body.text = { format: { type: "json_object" } };
-    }
-    if (args.previousResponseId) {
-      body.previous_response_id = args.previousResponseId;
-    }
-    if (!isReasoning && args.temperature != null) {
-      body.temperature = args.temperature;
-    }
-    if (isReasoning && args.reasoning) {
-      body.reasoning = { effort: args.reasoning };
-    }
-
-    try {
-      const res = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        console.error("OpenAI Responses API error:", res.status, errText);
-        return { text: "", responseId: "" };
-      }
-      const data = (await res.json()) as {
-        id?: string;
-        output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
-      };
-      const text = extractText(data);
-      const responseId = data.id ?? "";
-      return { text, responseId };
-    } catch (e) {
-      console.error("OpenAI request failed:", e);
-      return { text: "", responseId: "" };
-    }
   },
 });
 

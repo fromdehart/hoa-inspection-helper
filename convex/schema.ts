@@ -607,4 +607,171 @@ export default defineSchema({
   })
     .index("by_hoa_email", ["hoaId", "email"])
     .index("by_hoa", ["hoaId"]),
+
+  // ------------------------------------------------------------------
+  // The Steward — AI-native board substrate (PRD §8). Gated by the
+  // "steward" feature flag; all agent effects land in these tables so the
+  // board can audit everything both agents do.
+  // ------------------------------------------------------------------
+
+  /**
+   * Board decisions as durable records (PRD §8.4). Replaces "Approved."
+   * reply chains: a motion is either open with visible votes or closed with
+   * an outcome — nothing lives only in an inbox. The Steward may OPEN
+   * motions and RECORD concurrence evidence it observes in intake; it never
+   * casts votes.
+   */
+  motions: defineTable({
+    hoaId: v.id("hoas"),
+    title: v.string(),
+    /** What's being decided, in plain words (may cite sources below). */
+    context: v.optional(v.string()),
+    caseId: v.optional(v.id("cases")),
+    inboundEmailId: v.optional(v.id("inboundEmails")),
+    proposedByClerkUserId: v.optional(v.string()),
+    /** True when the Steward opened this motion (L2, human-approved). */
+    proposedByAgent: v.optional(v.boolean()),
+    /** How the decision was made — in-app vote vs recorded email/text concurrence vs meeting vote. */
+    method: v.union(
+      v.literal("in_app"),
+      v.literal("email_concurrence"),
+      v.literal("text_recorded"),
+      v.literal("meeting"),
+    ),
+    votes: v.array(
+      v.object({
+        clerkUserId: v.string(),
+        vote: v.union(v.literal("yes"), v.literal("no"), v.literal("abstain")),
+        at: v.number(),
+        /** Evidence link when the vote was recorded from an email. */
+        viaInboundEmailId: v.optional(v.id("inboundEmails")),
+      }),
+    ),
+    quorumRequired: v.number(),
+    status: v.union(
+      v.literal("open"),
+      v.literal("passed"),
+      v.literal("failed"),
+      v.literal("expired"),
+    ),
+    /** Set once the motion is ratified in meeting minutes. */
+    ratifiedNote: v.optional(v.string()),
+    createdAt: v.number(),
+    closedAt: v.optional(v.number()),
+  })
+    .index("by_hoa_status", ["hoaId", "status"])
+    .index("by_hoa", ["hoaId"]),
+
+  /**
+   * Compliance calendar (PRD §10 P3, substrate landed early): filings,
+   * license renewals, tax estimates, data calls. "verified" requires
+   * evidence — absence of alarm is not verification.
+   */
+  deadlines: defineTable({
+    hoaId: v.id("hoas"),
+    title: v.string(),
+    detail: v.optional(v.string()),
+    dueAt: v.number(),
+    /** Freeform recurrence note ("annual", "quarterly"); scheduling stays human/agent-driven for now. */
+    recurrence: v.optional(v.string()),
+    ownerClerkUserId: v.optional(v.string()),
+    verificationState: v.union(
+      v.literal("unverified"),
+      v.literal("verified"),
+      v.literal("escalated"),
+    ),
+    evidenceNote: v.optional(v.string()),
+    evidenceInboundEmailId: v.optional(v.id("inboundEmails")),
+    verifiedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_hoa_due", ["hoaId", "dueAt"])
+    .index("by_hoa_state", ["hoaId", "verificationState"]),
+
+  /** Agenda items accreted across the cycle (PRD §10 meetings assistant; feed for ratification lists). */
+  agendaItems: defineTable({
+    hoaId: v.id("hoas"),
+    title: v.string(),
+    detail: v.optional(v.string()),
+    sourceCaseId: v.optional(v.id("cases")),
+    sourceMotionId: v.optional(v.id("motions")),
+    addedByClerkUserId: v.optional(v.string()),
+    addedByAgent: v.optional(v.boolean()),
+    status: v.union(v.literal("open"), v.literal("scheduled"), v.literal("done")),
+    createdAt: v.number(),
+  }).index("by_hoa_status", ["hoaId", "status"]),
+
+  /** One row per agent invocation (both agents), whether or not it acted (PRD §8.2). */
+  agentRuns: defineTable({
+    hoaId: v.id("hoas"),
+    agent: v.union(v.literal("steward"), v.literal("reviewer")),
+    /** Which duty ran: triage | chase | draft | watch | prep | review | sweep | digest. */
+    duty: v.string(),
+    /** What woke it: cron name, webhook, or a user action. */
+    trigger: v.string(),
+    model: v.optional(v.string()),
+    status: v.union(v.literal("ok"), v.literal("error")),
+    error: v.optional(v.string()),
+    actionsCount: v.optional(v.number()),
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+  })
+    .index("by_hoa_started", ["hoaId", "startedAt"])
+    .index("by_hoa", ["hoaId"]),
+
+  /**
+   * Cross-entity audit log for agent effects (PRD §8.2): every tool call the
+   * Steward makes and every verdict the Reviewer issues, linked to whatever
+   * records it touched. Append-only by convention — no update/delete API.
+   */
+  agentActions: defineTable({
+    hoaId: v.id("hoas"),
+    runId: v.id("agentRuns"),
+    toolName: v.string(),
+    /** Human-readable one-liner of the arguments (never raw payloads). */
+    argsSummary: v.string(),
+    autonomyLevel: v.union(
+      v.literal("L0"),
+      v.literal("L1"),
+      v.literal("L2"),
+      v.literal("L3"),
+    ),
+    reviewerVerdict: v.optional(
+      v.union(
+        v.literal("approved"),
+        v.literal("rejected"),
+        v.literal("sampled"),
+        v.literal("exempt"),
+      ),
+    ),
+    verdictReasons: v.optional(v.string()),
+    outcome: v.union(
+      v.literal("observed"),
+      v.literal("executed"),
+      v.literal("queued"),
+      v.literal("rejected"),
+      v.literal("needs_human"),
+    ),
+    caseId: v.optional(v.id("cases")),
+    propertyId: v.optional(v.id("properties")),
+    motionId: v.optional(v.id("motions")),
+    deadlineId: v.optional(v.id("deadlines")),
+    inboundEmailId: v.optional(v.id("inboundEmails")),
+    createdAt: v.number(),
+  })
+    .index("by_hoa_created", ["hoaId", "createdAt"])
+    .index("by_run", ["runId"]),
+
+  /**
+   * Per-HOA autonomy ladder settings (PRD §4.2): actionType → "L0".."L3".
+   * Unset action types fall back to the conservative defaults in code.
+   * Every change to this table is itself logged to agentActions.
+   */
+  stewardConfig: defineTable({
+    hoaId: v.id("hoas"),
+    autonomy: v.record(v.string(), v.string()),
+    updatedByClerkUserId: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("by_hoa", ["hoaId"]),
 });

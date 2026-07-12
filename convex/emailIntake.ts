@@ -28,7 +28,6 @@ import { normalizeEmail } from "./lib/homeownerAuth";
  */
 
 const INTAKE_PREFIX = "cases-";
-const AI_MODEL = "gpt-4o-mini";
 const MAX_BODY_CHARS = 20_000;
 
 export function parseIntakeAddress(to: string): { hoaSlug: string; caseToken?: string } | null {
@@ -287,7 +286,7 @@ export const process = internalAction({
       .slice(0, 400)
       .map((p) => `${p.propertyId} :: ${p.address}`)
       .join("\n");
-    const { text } = await ctx.runAction(internal.openai.generateText, {
+    const { text } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt:
         "You file inbound HOA emails into case records. " +
         'Return STRICT JSON: {"summary": "≤40 word factual summary", "suggestedTitle": "≤8 words", ' +
@@ -296,7 +295,7 @@ export const process = internalAction({
       prompt:
         `Email from: ${data.email.from}\nSubject: ${data.email.subject}\n\nBody:\n${data.email.textBody.slice(0, 12_000)}\n\n` +
         `Known properties (id :: address):\n${addressListing}`,
-      model: AI_MODEL,
+      role: "intakeTriage",
       temperature: 0.1,
       textFormatJsonObject: true,
     });

@@ -47,10 +47,10 @@ ${raw}
 
 Produce the bullet list now.`;
 
-    const { text } = await ctx.runAction(internal.openai.generateText, {
+    const { text } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt: SYSTEM_PROMPT,
       prompt,
-      model: "gpt-4o-mini",
+      role: "bullets",
       temperature: 0.25,
     });
 

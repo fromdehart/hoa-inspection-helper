@@ -5,7 +5,6 @@ import { requireHomeownerForProperty } from "./lib/homeownerAuth";
 import { checkAndBumpRateLimit } from "./lib/homeownerRateLimit";
 
 const MAX_CORPUS_CHARS = 36_000;
-const CHAT_MODEL = "gpt-4o-mini";
 const RATE_LIMIT = { limit: 30, windowMs: 60 * 60 * 1000, label: "chat" };
 
 const SYSTEM_PROMPT = `You are a friendly assistant for a homeowners association (HOA).
@@ -188,10 +187,10 @@ export const ask = action({
       ? trimmed
       : `HOA documents (context):\n${corpus || "(No HOA documents have been published yet.)"}\n\nHomeowner question:\n${trimmed}`;
 
-    const { text, responseId } = await ctx.runAction(internal.openai.generateText, {
+    const { text, responseId } = await ctx.runAction(internal.llm.generateText, {
       systemPrompt: SYSTEM_PROMPT,
       prompt,
-      model: CHAT_MODEL,
+      role: "chat",
       temperature: 0.3,
       previousResponseId: previousResponseId || undefined,
     });

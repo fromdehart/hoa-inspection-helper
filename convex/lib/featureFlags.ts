@@ -3,10 +3,12 @@ import type { Id } from "../_generated/dataModel";
 /**
  * Per-HOA feature flags stored on `hoas.featureFlags` (string array).
  * Platform admins toggle flags from the platform HOA detail page.
- * Known flags: "cases" (case tracking system), "emailIntake" (email → case pipeline).
+ * Known flags: "cases" (case tracking system), "emailIntake" (email → case
+ * pipeline), "steward" (proactive agent — also the global kill switch: off
+ * halts all crons/runs for the HOA within one sweep interval, PRD §8.2).
  */
 
-export type FeatureFlag = "cases" | "emailIntake";
+export type FeatureFlag = "cases" | "emailIntake" | "steward";
 
 type CtxWithDb = {
   db: {
