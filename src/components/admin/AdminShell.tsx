@@ -13,12 +13,18 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 
-type ActiveNav = "properties" | "walkthrough" | "cases" | "settings";
+type ActiveNav = "desk" | "properties" | "walkthrough" | "cases" | "settings";
 
-const NAV: Array<{ key: ActiveNav; label: string; to: string; requiresCases?: boolean }> = [
+const NAV: Array<{
+  key: ActiveNav;
+  label: string;
+  to: string;
+  requiresFlag?: "cases" | "steward";
+}> = [
+  { key: "desk", label: "Desk", to: "/admin/desk", requiresFlag: "steward" },
   { key: "properties", label: "Properties", to: "/admin/properties" },
   { key: "walkthrough", label: "Walkthrough", to: "/admin/walkthrough" },
-  { key: "cases", label: "Cases", to: "/admin/cases", requiresCases: true },
+  { key: "cases", label: "Cases", to: "/admin/cases", requiresFlag: "cases" },
   { key: "settings", label: "Settings", to: "/admin/settings" },
 ];
 
@@ -83,7 +89,9 @@ export default function AdminShell({
             </span>
           )}
           <nav className="flex gap-0.5">
-            {NAV.filter((n) => !n.requiresCases || casesEnabled).map((n) => (
+            {NAV.filter(
+              (n) => !n.requiresFlag || (viewer?.features?.includes(n.requiresFlag) ?? false),
+            ).map((n) => (
               <NavLink
                 key={n.key}
                 to={n.to}

@@ -8,6 +8,7 @@ import Landing from "./pages/Landing";
 import AdminGate from "./pages/admin/AdminGate";
 import Properties from "./pages/admin/Properties";
 import Walkthrough from "./pages/admin/Walkthrough";
+import Desk from "./pages/admin/Desk";
 import Settings from "./pages/admin/Settings";
 import PropertyReview from "./pages/admin/PropertyReview";
 import CaseDetailPage from "./pages/admin/CaseDetailPage";
@@ -72,6 +73,14 @@ const App = () => {
           />
           {/* Legacy dashboard URL — bookmarks and stale links land on Properties */}
           <Route path="/admin/dashboard" element={<Navigate to="/admin/properties" replace />} />
+          <Route
+            path="/admin/desk"
+            element={
+              <RoleGuard allow={["admin", "board"]}>
+                <Desk />
+              </RoleGuard>
+            }
+          />
           <Route
             path="/admin/walkthrough"
             element={
