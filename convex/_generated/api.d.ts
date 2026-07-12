@@ -83,6 +83,7 @@ import type * as proposals from "../proposals.js";
 import type * as resend from "../resend.js";
 import type * as steward from "../steward.js";
 import type * as stewardChase from "../stewardChase.js";
+import type * as stewardConfig from "../stewardConfig.js";
 import type * as streets from "../streets.js";
 import type * as templateRender from "../templateRender.js";
 import type * as templates from "../templates.js";
@@ -167,6 +168,7 @@ declare const fullApi: ApiFromModules<{
   resend: typeof resend;
   steward: typeof steward;
   stewardChase: typeof stewardChase;
+  stewardConfig: typeof stewardConfig;
   streets: typeof streets;
   templateRender: typeof templateRender;
   templates: typeof templates;

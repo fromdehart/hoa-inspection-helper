@@ -20,6 +20,7 @@ import { EmailIntakeSettings } from "@/components/cases/EmailIntakeSettings";
 import AdminShell from "@/components/admin/AdminShell";
 import { ImportExportCard } from "@/components/admin/ImportExportCard";
 import { TeamSection } from "@/components/admin/TeamSection";
+import { StewardAutonomySection } from "@/components/admin/StewardAutonomySection";
 
 /** Editable letter body — only `templateText`; never fall back to upload `parsedText`. */
 function editorBodyFromStoredTemplate(doc: { templateText?: string } | null | undefined): string {
@@ -276,6 +277,7 @@ export default function Settings() {
 
         <ImportExportCard hoaSlug={settingsViewer?.hoaSlug} />
         <TeamSection />
+        {settingsViewer?.features?.includes("steward") && <StewardAutonomySection />}
         <section className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-lg font-bold text-gray-800">Violation letter template</h2>

@@ -290,6 +290,23 @@ export const weeklyDigest = internalMutation({
         .withIndex("by_hoa_created", (q) => q.eq("hoaId", hoa._id).gt("createdAt", weekAgo))
         .collect();
 
+      // Reviewer post-hoc sampling (PRD §5): L3 auto-actions skip the
+      // pre-execution Reviewer, so a weekly sample gets audited after the
+      // fact. Today's L3 actions are deterministic (reminders, summaries) —
+      // the audit is invariant checks; when LLM-composed L3 actions exist,
+      // this is where their Reviewer pass slots in.
+      const unsampled = recentActions
+        .filter((a) => a.autonomyLevel === "L3" && a.reviewerVerdict == null)
+        .slice(0, 5);
+      for (const a of unsampled) {
+        const intact =
+          a.argsSummary.trim().length > 0 && a.outcome === "executed" && a.runId != null;
+        await ctx.db.patch(a._id, {
+          reviewerVerdict: intact ? "sampled" : "rejected",
+          ...(intact ? {} : { verdictReasons: "post-hoc sample failed invariant checks" }),
+        });
+      }
+
       const runId = await ctx.db.insert("agentRuns", {
         hoaId: hoa._id,
         agent: "steward",
