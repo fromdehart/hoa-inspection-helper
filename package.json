@@ -12,6 +12,7 @@
     "local:vercel": "vite build && vite preview",
     "pwa:icons": "node scripts/generate-pwa-icons.mjs",
     "build": "npm run pwa:icons && vite build",
+    "vercel-build": "if [ \"$VERCEL_ENV\" = \"production\" ] || [ -z \"$CONVEX_DEPLOY_KEY\" ]; then npm run build; else npx convex deploy --cmd-url-env-var-name VITE_CONVEX_URL --cmd 'npm run build'; fi",
     "build:dev": "vite build --mode development",
     "build:mobile": "CAPACITOR=1 vite build && cap sync",
     "mobile:sync": "CAPACITOR=1 vite build && cap sync",
