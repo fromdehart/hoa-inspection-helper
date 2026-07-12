@@ -13,6 +13,7 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as agendaItems from "../agendaItems.js";
 import type * as aiConfig from "../aiConfig.js";
 import type * as arcApplicationReview from "../arcApplicationReview.js";
 import type * as arcApplications from "../arcApplications.js";
@@ -26,6 +27,7 @@ import type * as company from "../company.js";
 import type * as companyAdmin from "../companyAdmin.js";
 import type * as copilot from "../copilot.js";
 import type * as crons from "../crons.js";
+import type * as deadlines from "../deadlines.js";
 import type * as demoSeed from "../demoSeed.js";
 import type * as emailIntake from "../emailIntake.js";
 import type * as fines from "../fines.js";
@@ -65,6 +67,7 @@ import type * as llm from "../llm.js";
 import type * as members from "../members.js";
 import type * as membersNode from "../membersNode.js";
 import type * as migrations_backfillCases from "../migrations/backfillCases.js";
+import type * as motions from "../motions.js";
 import type * as multiHoa from "../multiHoa.js";
 import type * as notices from "../notices.js";
 import type * as openai from "../openai.js";
@@ -89,6 +92,7 @@ import type * as tenancy from "../tenancy.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  agendaItems: typeof agendaItems;
   aiConfig: typeof aiConfig;
   arcApplicationReview: typeof arcApplicationReview;
   arcApplications: typeof arcApplications;
@@ -102,6 +106,7 @@ declare const fullApi: ApiFromModules<{
   companyAdmin: typeof companyAdmin;
   copilot: typeof copilot;
   crons: typeof crons;
+  deadlines: typeof deadlines;
   demoSeed: typeof demoSeed;
   emailIntake: typeof emailIntake;
   fines: typeof fines;
@@ -141,6 +146,7 @@ declare const fullApi: ApiFromModules<{
   members: typeof members;
   membersNode: typeof membersNode;
   "migrations/backfillCases": typeof migrations_backfillCases;
+  motions: typeof motions;
   multiHoa: typeof multiHoa;
   notices: typeof notices;
   openai: typeof openai;
