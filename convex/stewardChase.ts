@@ -367,5 +367,4 @@ async function chaseOne(
           needsHuman: !final,
           model,
         });
-  }
 }
