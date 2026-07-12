@@ -18,6 +18,14 @@ crons.daily(
   internal.steward.dailySweep,
 );
 
+// Deterministic internal nudges (ARC reviewers, stalled votes) — facts, not
+// prose, so no LLM/Reviewer involved.
+crons.daily(
+  "steward daily nudges",
+  { hourUTC: 11, minuteUTC: 15 },
+  internal.steward.internalNudges,
+);
+
 // Chase duty: drain awaiting_agent findings into Reviewer-verified drafts.
 // Runs after the sweep so it always works from a fresh queue.
 crons.daily(

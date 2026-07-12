@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { isFeatureEnabled } from "./lib/featureFlags";
 import { requireViewerRole } from "./lib/tenantAuth";
 import { routeForKind } from "./lib/stewardPlaybooks";
+import { effectiveAutonomy } from "./lib/stewardAutonomy";
 
 /**
  * The Steward's deterministic monitoring loop (PRD §8.1–8.2).
@@ -308,6 +309,91 @@ export const weeklyDigest = internalMutation({
         createdAt: now,
       });
       await ctx.db.patch(runId, { endedAt: Date.now(), actionsCount: 1 });
+    }
+  },
+});
+
+/**
+ * Internal nudges (board_reminder duty): arc_aging and motion_stalled
+ * findings become short reminders on the Desk activity feed + weekly digest.
+ * Deliberately DETERMINISTIC — internal reminders need facts, not prose, so
+ * no LLM (and therefore no Reviewer pass) is involved; the text is computed
+ * from the finding itself. Runs at board_reminder's autonomy level (default
+ * L3 = auto + logged); anything below L3 skips — the finding is already
+ * visible in the queue.
+ */
+const NUDGE_COOLDOWN_MS = 3 * DAY_MS;
+
+export const internalNudges = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const hoas = await ctx.db.query("hoas").collect();
+
+    for (const hoa of hoas) {
+      if (!(await isFeatureEnabled(ctx, hoa._id, "steward"))) continue;
+      const config = await ctx.db
+        .query("stewardConfig")
+        .withIndex("by_hoa", (q) => q.eq("hoaId", hoa._id))
+        .first();
+      if (effectiveAutonomy("board_reminder", config?.autonomy) !== "L3") continue;
+
+      const queued = await ctx.db
+        .query("findings")
+        .withIndex("by_hoa_status", (q) => q.eq("hoaId", hoa._id).eq("status", "awaiting_agent"))
+        .collect();
+      const targets = queued.filter(
+        (f) => f.kind === "arc_aging" || f.kind === "motion_stalled",
+      );
+      if (targets.length === 0) continue;
+
+      // Cooldown: skip anything nudged in the last 3 days.
+      const recent = await ctx.db
+        .query("agentActions")
+        .withIndex("by_hoa_created", (q) =>
+          q.eq("hoaId", hoa._id).gt("createdAt", now - NUDGE_COOLDOWN_MS),
+        )
+        .collect();
+      const nudgedKeys = new Set(
+        recent
+          .filter((a) => a.toolName === "board_reminder")
+          .map((a) => `${a.motionId ?? ""}:${a.propertyId ?? ""}`),
+      );
+
+      let runId: Id<"agentRuns"> | null = null;
+      let count = 0;
+      for (const f of targets) {
+        const key = `${f.motionId ?? ""}:${f.propertyId ?? ""}`;
+        if (nudgedKeys.has(key)) continue;
+        if (!runId) {
+          runId = await ctx.db.insert("agentRuns", {
+            hoaId: hoa._id,
+            agent: "steward",
+            duty: "chase",
+            trigger: "cron:daily-nudges",
+            status: "ok",
+            startedAt: now,
+          });
+        }
+        const text =
+          f.kind === "motion_stalled"
+            ? `Reminder — ${f.title}. Vote from the Desk.`
+            : `Reminder — ${f.title}. ARC reviewers, please take a look.`;
+        await ctx.db.insert("agentActions", {
+          hoaId: hoa._id,
+          runId,
+          toolName: "board_reminder",
+          argsSummary: text,
+          autonomyLevel: "L3",
+          reviewerVerdict: "exempt",
+          outcome: "executed",
+          motionId: f.motionId,
+          propertyId: f.propertyId,
+          createdAt: now,
+        });
+        count += 1;
+      }
+      if (runId) await ctx.db.patch(runId, { endedAt: Date.now(), actionsCount: count });
     }
   },
 });
