@@ -157,6 +157,12 @@ export const getForProcessing = internalQuery({
       if (prior?.caseId) threadCaseId = prior.caseId;
     }
 
+    // Open (unverified/escalated) deadlines for the evidence-matching Watch hook.
+    const openDeadlines = await ctx.db
+      .query("deadlines")
+      .withIndex("by_hoa_due", (q) => q.eq("hoaId", hoa._id))
+      .collect();
+
     // Steward context: reply drafting + concurrence capture (both flag-gated).
     const stewardEnabled = await isFeatureEnabled(ctx, hoa._id, "steward");
     const stewardConfig = stewardEnabled
@@ -186,6 +192,9 @@ export const getForProcessing = internalQuery({
         ? { clerkUserId: senderMembership.clerkUserId, role: senderMembership.role }
         : null,
       openMotions: openMotions.map((m) => ({ _id: m._id, title: m.title })),
+      openDeadlines: openDeadlines
+        .filter((d) => d.verificationState !== "verified")
+        .map((d) => ({ _id: d._id, title: d.title })),
     } as const;
   },
 });
@@ -412,6 +421,75 @@ export const process = internalAction({
         category,
       });
       return null;
+    }
+
+    // --- Watch duty (Phase 3a): does this email plausibly verify an open
+    // compliance deadline? Deterministic keyword overlap — the human decides.
+    const haystack = `${data.email.subject} ${summary}`.toLowerCase();
+    for (const d of data.openDeadlines) {
+      const words = d.title.toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 3);
+      const hits = words.filter((w) => haystack.includes(w)).length;
+      if (hits >= 2) {
+        await ctx.runMutation(internal.steward.createEventFinding, {
+          hoaId: data.hoa._id,
+          kind: "deadline_evidence_maybe",
+          dedupeKey: `deadline_evidence_maybe:${d._id}:${args.inboundEmailId}`,
+          title: `Email may verify "${d.title}" — attach it as evidence?`,
+          inboundEmailId: args.inboundEmailId,
+        });
+      }
+    }
+
+    // --- Financial packet review (Phase 4a): every financial email produces
+    // the recurring-checks checklist finding; the treasurer reviews from a
+    // list, not a blank stare.
+    if (category === "financial" && data.stewardEnabled) {
+      await ctx.runMutation(internal.steward.createEventFinding, {
+        hoaId: data.hoa._id,
+        kind: "financial_packet_review",
+        dedupeKey: `financial_packet_review:${args.inboundEmailId}`,
+        title: `Financial mail: "${data.email.subject || "(no subject)"}" — run the checks`,
+        detail:
+          "Recurring checks: reserve auto-transfer recorded? · estimated taxes on schedule? · " +
+          "unexplained fees (returned-check class)? · substitute/replacement reports? · new payees?",
+        inboundEmailId: args.inboundEmailId,
+      });
+      const level = effectiveAutonomy("financial_questions", data.stewardAutonomy);
+      if (level !== "L0") {
+        try {
+          const result = await draftWithReview(ctx, {
+            stewardSystem: FINANCIAL_STEWARD_SYSTEM,
+            reviewerSystem: FINANCIAL_REVIEWER_SYSTEM,
+            context:
+              `HOA: ${data.hoa.name}\nFrom: ${data.email.from}\nSubject: ${data.email.subject}\n\n` +
+              `Email body (excerpt):\n${data.email.textBody.slice(0, 6_000)}`,
+            precheck: (draft) => {
+              const words = draft.body.trim().split(/\s+/).length;
+              return words < 20 || words > 220 ? `body is ${words} words (expected 30-200)` : null;
+            },
+          });
+          if (result.draft) {
+            await ctx.runMutation(internal.stewardChase.recordProposal, {
+              hoaId: data.hoa._id,
+              actionType: "financial_questions",
+              duty: "review",
+              trigger: "email:intake",
+              inboundEmailId: args.inboundEmailId,
+              autonomyLevel: level,
+              draftSubject: result.draft.subject,
+              draftBody: result.draft.body,
+              contextSummary: `Questions about: ${data.email.subject}`,
+              reviewerVerdict: "approved",
+              verdictReasons: result.reasons || undefined,
+              attempts: result.attempts,
+              needsHuman: false,
+              model: result.model,
+            });
+          }
+        } catch (e) {
+          console.error("financial questions draft failed", e);
+        }
+      }
     }
 
     // --- Noise: classified as needing no action, and nothing routed it to a
@@ -789,3 +867,18 @@ export const removeSender = mutation({
     return null;
   },
 });
+
+const FINANCIAL_STEWARD_SYSTEM = `You are the Steward, the operations agent for a volunteer HOA board.
+A financial email arrived (statement, invoice, accounting note). Draft the treasurer's clarification
+email: SHORT, specific QUESTIONS about anything unclear, unusual, or unexplained in the message.
+Rules:
+- Questions only. No accusations, no conclusions, no numbers that don't appear in the source.
+- If nothing needs asking, ask for confirmation of the one or two most consequential facts.
+- Plain text. Greeting "Hi," sign-off "Thank you,\nThe Board". 30-180 words.
+Return STRICT JSON: {"subject": "...", "body": "..."}`;
+
+const FINANCIAL_REVIEWER_SYSTEM = `You are the Reviewer. Verify a treasurer's clarification email before it may proceed. Reject unless ALL hold:
+1. It contains only questions or requests for confirmation — no accusations, judgments, or instructions to move money.
+2. Every number or fact referenced appears in the context.
+3. Courteous, professional; 30-200 words; plain text.
+Return STRICT JSON: {"verdict": "approve"|"reject", "reasons": ["..."]}`;

@@ -33,6 +33,12 @@ export const FINDING_ROUTES: Record<string, FindingRoute> = {
   inspection_ready_for_review: "human",
   /** A member emailed a concurrence but no single open motion matches — human links it. */
   concurrence_needs_match: "human",
+  /** An email plausibly verifies an open compliance deadline — human attaches evidence. */
+  deadline_evidence_maybe: "human",
+  /** Financial mail arrived — treasurer runs the recurring checks. */
+  financial_packet_review: "human",
+  /** Vendor work stuck in quote/approved — human decides push vs drop (chase playbook later). */
+  work_order_stalled: "human",
 };
 
 export function routeForKind(kind: string): FindingRoute {

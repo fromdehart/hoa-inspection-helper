@@ -20,6 +20,7 @@ import type * as arcApplications from "../arcApplications.js";
 import type * as arcDocIngest from "../arcDocIngest.js";
 import type * as arcReferenceDocs from "../arcReferenceDocs.js";
 import type * as arcReviewSettings from "../arcReviewSettings.js";
+import type * as askRecord from "../askRecord.js";
 import type * as caseWorkflows from "../caseWorkflows.js";
 import type * as cases from "../cases.js";
 import type * as chat from "../chat.js";
@@ -47,6 +48,7 @@ import type * as lib_caseGates from "../lib/caseGates.js";
 import type * as lib_caseValidators from "../lib/caseValidators.js";
 import type * as lib_companyAuth from "../lib/companyAuth.js";
 import type * as lib_companyRateLimit from "../lib/companyRateLimit.js";
+import type * as lib_complianceLibrary from "../lib/complianceLibrary.js";
 import type * as lib_copilotFormat from "../lib/copilotFormat.js";
 import type * as lib_defaultWorkflows from "../lib/defaultWorkflows.js";
 import type * as lib_featureFlags from "../lib/featureFlags.js";
@@ -67,6 +69,7 @@ import type * as lib_stewardPipeline from "../lib/stewardPipeline.js";
 import type * as lib_stewardPlaybooks from "../lib/stewardPlaybooks.js";
 import type * as lib_tenantAuth from "../lib/tenantAuth.js";
 import type * as llm from "../llm.js";
+import type * as meetings from "../meetings.js";
 import type * as members from "../members.js";
 import type * as membersNode from "../membersNode.js";
 import type * as migrations_backfillCases from "../migrations/backfillCases.js";
@@ -88,6 +91,7 @@ import type * as streets from "../streets.js";
 import type * as templateRender from "../templateRender.js";
 import type * as templates from "../templates.js";
 import type * as tenancy from "../tenancy.js";
+import type * as workOrders from "../workOrders.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -105,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   arcDocIngest: typeof arcDocIngest;
   arcReferenceDocs: typeof arcReferenceDocs;
   arcReviewSettings: typeof arcReviewSettings;
+  askRecord: typeof askRecord;
   caseWorkflows: typeof caseWorkflows;
   cases: typeof cases;
   chat: typeof chat;
@@ -132,6 +137,7 @@ declare const fullApi: ApiFromModules<{
   "lib/caseValidators": typeof lib_caseValidators;
   "lib/companyAuth": typeof lib_companyAuth;
   "lib/companyRateLimit": typeof lib_companyRateLimit;
+  "lib/complianceLibrary": typeof lib_complianceLibrary;
   "lib/copilotFormat": typeof lib_copilotFormat;
   "lib/defaultWorkflows": typeof lib_defaultWorkflows;
   "lib/featureFlags": typeof lib_featureFlags;
@@ -152,6 +158,7 @@ declare const fullApi: ApiFromModules<{
   "lib/stewardPlaybooks": typeof lib_stewardPlaybooks;
   "lib/tenantAuth": typeof lib_tenantAuth;
   llm: typeof llm;
+  meetings: typeof meetings;
   members: typeof members;
   membersNode: typeof membersNode;
   "migrations/backfillCases": typeof migrations_backfillCases;
@@ -173,6 +180,7 @@ declare const fullApi: ApiFromModules<{
   templateRender: typeof templateRender;
   templates: typeof templates;
   tenancy: typeof tenancy;
+  workOrders: typeof workOrders;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

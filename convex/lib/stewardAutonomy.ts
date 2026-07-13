@@ -25,7 +25,8 @@ export type StewardActionType =
   | "hearing_notice" // hearing scheduling / notice send
   | "open_motion" // opening a concurrence/vote
   | "email_reply" // drafted reply to a filed homeowner email
-  | "record_concurrence"; // recording an observed email/text vote as evidence
+  | "record_concurrence" // recording an observed email/text vote as evidence
+  | "financial_questions"; // drafted clarification questions about financial mail
 
 export const AUTONOMY_DEFAULTS: Record<StewardActionType, AutonomyLevel> = {
   internal_note: "L3",
@@ -38,6 +39,7 @@ export const AUTONOMY_DEFAULTS: Record<StewardActionType, AutonomyLevel> = {
   open_motion: "L2",
   email_reply: "L1",
   record_concurrence: "L2",
+  financial_questions: "L1",
 };
 
 export const AUTONOMY_CEILINGS: Record<StewardActionType, AutonomyLevel> = {
@@ -51,6 +53,7 @@ export const AUTONOMY_CEILINGS: Record<StewardActionType, AutonomyLevel> = {
   open_motion: "L3",
   email_reply: "L2",
   record_concurrence: "L3",
+  financial_questions: "L2",
 };
 
 const LEVEL_ORDER: AutonomyLevel[] = ["L0", "L1", "L2", "L3"];

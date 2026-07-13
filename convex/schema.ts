@@ -796,6 +796,35 @@ export default defineSchema({
     .index("by_hoa_status", ["hoaId", "status"])
     .index("by_finding", ["findingId"]),
 
+  /**
+   * Vendor work lifecycle (Phase 4b): quote → approved → scheduled → done,
+   * out of the Fw: chains. Approval links the decision log; completion asks
+   * for verification. Performance history accrues for renewals and RFPs.
+   */
+  workOrders: defineTable({
+    hoaId: v.id("hoas"),
+    title: v.string(),
+    vendor: v.string(),
+    detail: v.optional(v.string()),
+    amount: v.optional(v.number()),
+    status: v.union(
+      v.literal("quote"),
+      v.literal("approved"),
+      v.literal("scheduled"),
+      v.literal("done"),
+      v.literal("cancelled"),
+    ),
+    motionId: v.optional(v.id("motions")),
+    caseId: v.optional(v.id("cases")),
+    propertyId: v.optional(v.id("properties")),
+    scheduledFor: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    verificationNote: v.optional(v.string()),
+    createdByClerkUserId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_hoa_status", ["hoaId", "status"]),
+
   /** One row per agent invocation (both agents), whether or not it acted (PRD §8.2). */
   agentRuns: defineTable({
     hoaId: v.id("hoas"),

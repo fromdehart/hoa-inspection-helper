@@ -156,6 +156,23 @@ async function detect(
     });
   }
 
+  // Vendor work stuck in quote/approved — the chased-signature class (OM §2.7).
+  for (const status of ["quote", "approved"] as const) {
+    const stuck = await ctx.db
+      .query("workOrders")
+      .withIndex("by_hoa_status", (q) => q.eq("hoaId", hoaId).eq("status", status))
+      .collect();
+    for (const w of stuck) {
+      if (now - w.updatedAt <= 14 * DAY_MS) continue;
+      const daysStuck = Math.floor((now - w.updatedAt) / DAY_MS);
+      found.push({
+        kind: "work_order_stalled",
+        dedupeKey: `work_order_stalled:${w._id}`,
+        title: `Work order "${w.title}" (${w.vendor}) has sat in ${status} for ${daysStuck}d`,
+      });
+    }
+  }
+
   // Inspections landed in "ready to review" — updates coming from the field.
   const properties = await ctx.db
     .query("properties")

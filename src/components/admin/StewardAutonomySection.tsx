@@ -13,6 +13,7 @@ const ACTION_LABELS: Record<string, { label: string; hint: string }> = {
   open_motion: { label: "Opening votes", hint: "Voting itself is always human" },
   email_reply: { label: "Replies to homeowners", hint: "Acknowledgments of filed email" },
   record_concurrence: { label: "Recording email votes", hint: "Evidence-linked concurrences" },
+  financial_questions: { label: "Financial clarifications", hint: "Drafted questions for the bookkeeper" },
 };
 
 const LEVEL_LABELS: Record<string, string> = {

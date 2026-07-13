@@ -2,6 +2,7 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireViewerRole } from "./lib/tenantAuth";
 import { requireFeature } from "./lib/featureFlags";
+import { COMPLIANCE_LIBRARY, nextOccurrence } from "./lib/complianceLibrary";
 
 /**
  * The compliance calendar (PRD §10 — the "due dates matrix" the board asked
@@ -68,6 +69,40 @@ export const remove = mutation({
     const deadline = await ctx.db.get(args.deadlineId);
     if (!deadline || deadline.hoaId !== viewer.hoaId) throw new Error("Deadline not found.");
     await ctx.db.delete(args.deadlineId);
+  },
+});
+
+/**
+ * One-tap standard calendar (Phase 3a): inserts every library deadline not
+ * already present by title, due at its next occurrence. Idempotent.
+ */
+export const seedFromLibrary = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await requireViewerRole(ctx, ["admin", "board"]);
+    await requireFeature(ctx, viewer.hoaId, "steward");
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("deadlines")
+      .withIndex("by_hoa_due", (q) => q.eq("hoaId", viewer.hoaId))
+      .collect();
+    const have = new Set(existing.map((d) => d.title));
+    let created = 0;
+    for (const t of COMPLIANCE_LIBRARY) {
+      if (have.has(t.title)) continue;
+      await ctx.db.insert("deadlines", {
+        hoaId: viewer.hoaId,
+        title: t.title,
+        detail: t.detail,
+        dueAt: nextOccurrence(t, now),
+        recurrence: t.recurrence,
+        verificationState: "unverified",
+        createdAt: now,
+        updatedAt: now,
+      });
+      created += 1;
+    }
+    return { created };
   },
 });
 

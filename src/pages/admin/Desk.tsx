@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import AdminShell from "@/components/admin/AdminShell";
@@ -281,10 +281,210 @@ function ProposalCard({ proposal }: { proposal: Doc<"stewardProposals"> }) {
   );
 }
 
+function MeetingToolsCard() {
+  const [want, setWant] = useState<"agenda" | "minutes" | null>(null);
+  const agenda = useQuery(api.meetings.assembleAgenda, want === "agenda" ? {} : "skip");
+  const minutes = useQuery(api.meetings.draftMinutesScaffold, want === "minutes" ? {} : "skip");
+  const doc = want === "agenda" ? agenda?.markdown : want === "minutes" ? minutes?.markdown : null;
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <h2 className="text-[13px] font-bold">Meeting tools</h2>
+      <p className="mt-0.5 text-xs text-ink-2">
+        Assembled from the record — agenda items, pending ratifications, the queue.
+      </p>
+      <div className="mt-2 flex gap-1.5">
+        <Button
+          size="sm"
+          variant={want === "agenda" ? "default" : "outline"}
+          onClick={() => {
+            setWant(want === "agenda" ? null : "agenda");
+            setCopied(false);
+          }}
+        >
+          Assemble agenda
+        </Button>
+        <Button
+          size="sm"
+          variant={want === "minutes" ? "default" : "outline"}
+          onClick={() => {
+            setWant(want === "minutes" ? null : "minutes");
+            setCopied(false);
+          }}
+        >
+          Minutes scaffold
+        </Button>
+      </div>
+      {want && (
+        <div className="mt-2">
+          {doc ? (
+            <>
+              <pre className="max-h-56 overflow-auto rounded-lg border bg-paper p-2 text-[11px] whitespace-pre-wrap">
+                {doc}
+              </pre>
+              <button
+                type="button"
+                className="mt-1.5 text-xs font-semibold text-petrol hover:underline"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(doc);
+                    setCopied(true);
+                  } catch {
+                    setCopied(false);
+                  }
+                }}
+              >
+                {copied ? "Copied ✓" : "Copy markdown"}
+              </button>
+            </>
+          ) : (
+            <p className="text-xs text-ink-2">Assembling…</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const WO_NEXT: Record<string, { label: string; next: "approved" | "scheduled" | "done" }> = {
+  quote: { label: "Approve", next: "approved" },
+  approved: { label: "Mark scheduled", next: "scheduled" },
+  scheduled: { label: "Mark done", next: "done" },
+};
+
+function WorkOrdersCard() {
+  const orders = useQuery(api.workOrders.listForHoa, {});
+  const add = useMutation(api.workOrders.add);
+  const setStatus = useMutation(api.workOrders.setStatus);
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const [vendor, setVendor] = useState("");
+
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-[13px] font-bold">Vendor work</h2>
+        <button
+          type="button"
+          className="text-xs font-semibold text-petrol hover:underline"
+          onClick={() => setAdding((a) => !a)}
+        >
+          {adding ? "cancel" : "+ add"}
+        </button>
+      </div>
+      {adding && (
+        <div className="mt-2 space-y-2">
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What work? (e.g. Street sign repair)" />
+          <div className="flex gap-2">
+            <Input value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="Vendor" />
+            <Button
+              size="sm"
+              disabled={!title.trim() || !vendor.trim()}
+              onClick={async () => {
+                await add({ title: title.trim(), vendor: vendor.trim() });
+                setTitle("");
+                setVendor("");
+                setAdding(false);
+              }}
+            >
+              Add
+            </Button>
+          </div>
+        </div>
+      )}
+      <ul className="mt-1">
+        {(orders ?? []).map((w) => {
+          const advance = WO_NEXT[w.status];
+          return (
+            <li key={w._id} className="border-t border-border/60 py-2 first:border-0">
+              <div className="flex items-center gap-2">
+                <Chip tone={w.status === "quote" ? "wait" : w.status === "approved" ? "open" : "ok"}>
+                  {w.status}
+                </Chip>
+                <p className="min-w-0 flex-1 truncate text-[13px]">
+                  {w.title} <span className="text-ink-2">· {w.vendor}</span>
+                </p>
+                {advance && (
+                  <button
+                    type="button"
+                    className="flex-none text-xs font-semibold text-petrol hover:underline"
+                    onClick={async () => {
+                      if (advance.next === "done") {
+                        const note = window.prompt("What confirms the work is done? (required)");
+                        if (!note?.trim()) return;
+                        await setStatus({ workOrderId: w._id, status: "done", verificationNote: note.trim() });
+                      } else {
+                        await setStatus({ workOrderId: w._id, status: advance.next });
+                      }
+                    }}
+                  >
+                    {advance.label}
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+        {(orders ?? []).length === 0 && (
+          <p className="pt-2 text-xs text-ink-2">No open vendor work.</p>
+        )}
+      </ul>
+    </div>
+  );
+}
+
+function AskRecordCard() {
+  const ask = useAction(api.askRecord.ask);
+  const [q, setQ] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!q.trim() || busy) return;
+    setBusy(true);
+    setAnswer(null);
+    try {
+      const r = await ask({ question: q.trim() });
+      setAnswer(r.answer);
+    } catch {
+      setAnswer("Something went wrong asking the record.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <h2 className="text-[13px] font-bold">Ask the record</h2>
+      <p className="mt-0.5 text-xs text-ink-2">
+        Decisions, deadlines, agenda history — answered with citations.
+      </p>
+      <div className="mt-2 flex gap-2">
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder='e.g. "Did we approve the tree work?"'
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void submit();
+          }}
+        />
+        <Button size="sm" disabled={!q.trim() || busy} onClick={() => void submit()}>
+          {busy ? "…" : "Ask"}
+        </Button>
+      </div>
+      {answer && (
+        <p className="mt-2 whitespace-pre-wrap rounded-lg border bg-paper p-2 text-[12.5px]">{answer}</p>
+      )}
+    </div>
+  );
+}
+
 function DeadlinesCard() {
   const deadlines = useQuery(api.deadlines.listForHoa, {});
   const add = useMutation(api.deadlines.add);
   const verify = useMutation(api.deadlines.verify);
+  const seedFromLibrary = useMutation(api.deadlines.seedFromLibrary);
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
@@ -374,7 +574,21 @@ function DeadlinesCard() {
           </li>
         ))}
         {open.length === 0 && (
-          <p className="pt-2 text-xs text-ink-2">Nothing unverified on the calendar.</p>
+          <div className="pt-2">
+            <p className="text-xs text-ink-2">Nothing unverified on the calendar.</p>
+            {(deadlines ?? []).length === 0 && (
+              <button
+                type="button"
+                className="mt-1.5 text-xs font-semibold text-petrol hover:underline"
+                onClick={async () => {
+                  const r = await seedFromLibrary({});
+                  alert(`Added ${r.created} standard deadlines (SCC, DPOR, taxes, audit, data call…).`);
+                }}
+              >
+                Seed the standard calendar ▸
+              </button>
+            )}
+          </div>
         )}
       </ul>
     </div>
@@ -618,6 +832,9 @@ export default function Desk() {
           <div className="space-y-4">
             <DeadlinesCard />
             <AgendaCard />
+            <MeetingToolsCard />
+            <WorkOrdersCard />
+            <AskRecordCard />
             <div className="rounded-xl border bg-white p-4">
               <h2 className="text-[13px] font-bold">Steward activity</h2>
               <ul className="mt-1">
